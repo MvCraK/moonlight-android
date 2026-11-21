@@ -1,13 +1,23 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2197,
+    "versionCode": 2198,
     "versionName": "26.11.07",
-    "commit": "c4438a0a3d93ea1c2b815aac85095fa7433fc4fc",
-    "size": 12361875,
-    "sha256": "eb54d50d551f5b56efd117a1306702148d6e6e2ba296753a0a9871cd0c30eeaa",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2197/axixi-2197.apk",
-    "notes": "Leave upstream conflicts for manual PR review [skip ci]"
+    "commit": "448fd19a7c8803343609c645a297010ec454e7c0",
+    "size": 12361931,
+    "sha256": "362ba89bdf2f0115a26a671e04fceebb74a8a2972104770fc617e5c531338fd4",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2198/axixi-2198.apk",
+    "notes": "fix(ui): 解决SS背景"
   },
-  "history": []
+  "history": [
+    {
+      "versionCode": 2197,
+      "versionName": "26.11.07",
+      "commit": "c4438a0a3d93ea1c2b815aac85095fa7433fc4fc",
+      "size": 12361875,
+      "sha256": "eb54d50d551f5b56efd117a1306702148d6e6e2ba296753a0a9871cd0c30eeaa",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2197/axixi-2197.apk",
+      "notes": "Leave upstream conflicts for manual PR review [skip ci]"
+    }
+  ]
 }
