@@ -1,0 +1,86 @@
+name: Personal APK
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: personal-release-axixi
+  cancel-in-progress: false
+
+env:
+  CHANNEL: axixi
+  CERTIFICATE: aad897263646d38fe272066d83360be06869d6cb3f10b277beeb47e0a2310408
+
+jobs:
+  build:
+    if: github.repository == 'MvCraK/moonlight-android' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.version.outputs.code }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-34 build-tools;34.0.0 build-tools;36.0.0 ndk;27.0.12077973
+      - name: Expose only API 34 to AGP 8.5 Lint
+        run: |
+          sdk="$RUNNER_TEMP/axixi-sdk"
+          mkdir -p "$sdk/platforms"
+          for d in build-tools licenses ndk platform-tools; do ln -s "$ANDROID_HOME/$d" "$sdk/$d"; done
+          ln -s "$ANDROID_HOME/platforms/android-34" "$sdk/platforms/android-34"
+          echo "sdk.dir=$sdk" > local.properties
+      - id: version
+        run: echo "code=$(git rev-list --first-parent --count HEAD)" >> "$GITHUB_OUTPUT"
+      - run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi
+          ./gradlew -PpersonalVersionCode=${{ steps.version.outputs.code }} -PincludeKishiHaptics=false -PincludeStereo3dAi=false :app:assembleNonRootRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-APK
+          overwrite: true
+          path: app/build/outputs/apk/nonRoot/release/*-unsigned.apk
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: axixi
+    permissions:
+      contents: write
+    env:
+      CODE: ${{ needs.build.outputs.code }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: unsigned-APK
+          path: unsigned
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: build-tools;36.0.0
+      - name: Sign channel APK
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/release.p12"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$KEYSTORE" | base64 -d > "$key"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$key" --ks-key-alias "$CHANNEL" --ks-pass env:PASSWORD --out "$CHANNEL-$CODE.apk" unsigned/*.apk
+      - name: Verify and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/personal/publish.py

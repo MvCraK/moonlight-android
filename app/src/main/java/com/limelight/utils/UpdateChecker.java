@@ -15,7 +15,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.gson.Gson;
+import org.json.JSONObject;
+import org.json.JSONArray;
 import com.limelight.BuildConfig;
 import com.limelight.R;
 import com.limelight.ui.AppDialog;
@@ -25,8 +26,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -36,12 +35,11 @@ import okhttp3.Response;
 
 public final class UpdateChecker {
 
-    private static final String UPDATE_CONFIG_URL = "https://www.axixi.top/res/config/anappversion.json";
-    private static final String FALLBACK_UPDATE_URL = "https://pan.quark.cn/s/9a334d831290";
+    private static final String UPDATE_CONFIG_URL = "https://raw.githubusercontent.com/MvCraK/moonlight-android/updates/axixi.json";
+    private static final String RELEASES = "https://github.com/MvCraK/moonlight-android/releases/download/";
     private static final String PREF_SKIPPED_UPDATE_CODE = "pref_skipped_update_code";
 
     private static final OkHttpClient CLIENT = new OkHttpClient();
-    private static final Gson GSON = new Gson();
 
     private UpdateChecker() {
     }
@@ -110,8 +108,8 @@ public final class UpdateChecker {
                     dismissSpinner(finalSpinner);
                     if (interactive) {
                         showToast(activity, parseError
-                                ? "更新信息解析失败，已打开默认下载链接"
-                                : "检查更新失败，已打开默认下载链接");
+                                ? "更新信息解析失败"
+                                : "检查更新失败");
                     }
                 });
             }
@@ -219,7 +217,7 @@ public final class UpdateChecker {
             return;
         }
 
-        if (latest.code <= BuildConfig.AXI_CODE) {
+        if (latest.code <= BuildConfig.VERSION_CODE) {
             if (interactive) {
                 showToast(activity, "当前已是最新版本");
             }
@@ -243,7 +241,7 @@ public final class UpdateChecker {
         View cancelButton = dialogView.findViewById(R.id.btn_cancel_update);
         View downloadButton = dialogView.findViewById(R.id.btn_download_update);
 
-        versionsView.setText("当前版本：" + BuildConfig.VERSION_NAME + " (" + BuildConfig.AXI_CODE + ")"
+        versionsView.setText("当前版本：" + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")"
                 + "\n最新版本：" + safeText(latest.versionName, "未知版本") + " (" + latest.code + ")");
         descView.setText(TextUtils.isEmpty(description) ? "暂无更新说明。" : description);
         skipRow.setVisibility(interactive ? View.GONE : View.VISIBLE);
@@ -271,8 +269,6 @@ public final class UpdateChecker {
         List<String> urls = new ArrayList<>();
 
         addDownloadOption(labels, urls, "GitHub Releases", latest.github);
-        addDownloadOption(labels, urls, "夸克网盘", latest.quark);
-        addDownloadOption(labels, urls, "百度网盘", latest.baidu);
 
         if (urls.isEmpty()) {
             showToast(activity, "当前没有可用下载地址");
@@ -372,124 +368,36 @@ public final class UpdateChecker {
 
     private static UpdateResponse parseUpdateResponse(String responseBody) {
         try {
-            return GSON.fromJson(responseBody, UpdateResponse.class);
-        } catch (Exception ignored) {
-            UpdateRelease latest = parseLatestReleaseFallback(responseBody);
-            if (latest == null) {
-                return null;
-            }
-
-            UpdateResponse updateResponse = new UpdateResponse();
-            updateResponse.data = new UpdateData();
-            updateResponse.data.latest = latest;
-            return updateResponse;
-        }
-    }
-
-    private static UpdateRelease parseLatestReleaseFallback(String responseBody) {
-        String latestBlock = extractLatestBlock(responseBody);
-        if (TextUtils.isEmpty(latestBlock)) {
-            return null;
-        }
-
-        UpdateRelease latest = new UpdateRelease();
-        latest.code = parseIntField(latestBlock, "code", 0);
-        latest.versionName = parseStringField(latestBlock, "versionName");
-        latest.desc = parseDescField(latestBlock);
-        latest.github = parseStringField(latestBlock, "github");
-        latest.quark = parseStringField(latestBlock, "quark");
-        latest.baidu = parseStringField(latestBlock, "baidu");
-
-        if (latest.code <= 0 && TextUtils.isEmpty(latest.versionName)) {
-            return null;
-        }
-        return latest;
-    }
-
-    private static String extractLatestBlock(String responseBody) {
-        int latestKeyIndex = responseBody.indexOf("\"latest\"");
-        if (latestKeyIndex < 0) {
-            return null;
-        }
-
-        int objectStart = responseBody.indexOf('{', latestKeyIndex);
-        if (objectStart < 0) {
-            return null;
-        }
-
-        int depth = 0;
-        boolean inString = false;
-        boolean escaping = false;
-        for (int i = objectStart; i < responseBody.length(); i++) {
-            char c = responseBody.charAt(i);
-
-            if (inString) {
-                if (escaping) {
-                    escaping = false;
-                } else if (c == '\\') {
-                    escaping = true;
-                } else if (c == '"') {
-                    inString = false;
-                }
-                continue;
-            }
-
-            if (c == '"') {
-                inString = true;
-                continue;
-            }
-
-            if (c == '{') {
-                depth++;
-            } else if (c == '}') {
-                depth--;
-                if (depth == 0) {
-                    return responseBody.substring(objectStart, i + 1);
+            JSONObject manifest = new JSONObject(responseBody);
+            if (!BuildConfig.APPLICATION_ID.equals(manifest.getString("packageName"))) return null;
+            JSONObject latest = manifest.getJSONObject("latest");
+            UpdateResponse response = new UpdateResponse();
+            response.data = new UpdateData();
+            response.data.latest = readRelease(latest);
+            JSONArray history = manifest.optJSONArray("history");
+            if (history != null) {
+                response.data.history = new UpdateRelease[history.length()];
+                for (int i = 0; i < history.length(); i++) {
+                    response.data.history[i] = readRelease(history.getJSONObject(i));
                 }
             }
-        }
-
-        return null;
-    }
-
-    private static int parseIntField(String source, String fieldName, int fallback) {
-        Matcher matcher = Pattern.compile("\"" + Pattern.quote(fieldName) + "\"\\s*:\\s*(\\d+)").matcher(source);
-        if (matcher.find()) {
-            try {
-                return Integer.parseInt(matcher.group(1));
-            } catch (NumberFormatException ignored) {
-                return fallback;
-            }
-        }
-        return fallback;
-    }
-
-    private static String parseStringField(String source, String fieldName) {
-        Matcher matcher = Pattern.compile("\"" + Pattern.quote(fieldName) + "\"\\s*:\\s*\"(.*?)\"", Pattern.DOTALL).matcher(source);
-        if (!matcher.find()) {
+            return response;
+        } catch (org.json.JSONException e) {
             return null;
         }
-        return cleanupJsonString(matcher.group(1));
     }
 
-    private static String parseDescField(String latestBlock) {
-        Matcher matcher = Pattern.compile("\"desc\"\\s*:\\s*\"(.*?)\"\\s*,\\s*\"(?:github|quark|baidu)\"", Pattern.DOTALL).matcher(latestBlock);
-        if (matcher.find()) {
-            return cleanupJsonString(matcher.group(1));
+    private static UpdateRelease readRelease(JSONObject entry) throws org.json.JSONException {
+        UpdateRelease release = new UpdateRelease();
+        release.code = entry.getInt("versionCode");
+        release.versionName = entry.getString("versionName");
+        release.desc = entry.optString("notes");
+        String artifact = "axixi-" + release.code;
+        release.github = RELEASES + artifact + "/" + artifact + ".apk";
+        if (release.code < 1 || !release.github.equals(entry.getString("apkUrl"))) {
+            throw new org.json.JSONException("Invalid Axixi release");
         }
-        return parseStringField(latestBlock, "desc");
-    }
-
-    private static String cleanupJsonString(String value) {
-        if (value == null) {
-            return null;
-        }
-        return value
-                .replace("\\\"", "\"")
-                .replace("\\n", "\n")
-                .replace("\\r", "\r")
-                .replace("\\t", "\t")
-                .trim();
+        return release;
     }
 
     private static String normalizeDescription(String description) {
@@ -543,7 +451,5 @@ public final class UpdateChecker {
         private String versionName;
         private String desc;
         private String github;
-        private String quark;
-        private String baidu;
     }
 }

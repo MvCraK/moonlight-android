@@ -1,5 +1,4 @@
-name: Sync V+ upstream
-
+name: Sync Moonlight upstreams
 on:
   schedule:
     - cron: '17 * * * *'
@@ -7,26 +6,49 @@ on:
 
 permissions:
   contents: write
-
-concurrency: sync-vplus
+  pull-requests: write
+  actions: write
 
 jobs:
   sync:
     if: github.repository == 'MvCraK/moonlight-android' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - branch: master
+            upstream: Axixi2233/moonlight-android
+          - branch: vplus
+            upstream: qiin2333/moonlight-vplus
+    concurrency: sync-${{ matrix.branch }}
     steps:
-      - name: Fast-forward vplus to upstream master
-        env:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-depth: 0
+      - env:
+          BRANCH: ${{ matrix.branch }}
+          UPSTREAM: ${{ matrix.upstream }}
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
-          upstream=$(gh api repos/qiin2333/moonlight-vplus/git/ref/heads/master --jq .object.sha)
-          target="repos/$GITHUB_REPOSITORY/git"
-          current=$(gh api "$target/ref/heads/vplus" --jq .object.sha)
-          if [[ "$current" == "$upstream" ]]; then
-            echo "vplus is up to date at $current" >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          git config user.name github-actions
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags "https://github.com/$UPSTREAM.git" refs/heads/master
+          source=$(git rev-parse FETCH_HEAD)
+          if git merge-base --is-ancestor "$source" HEAD; then exit 0; fi
+          if ! git merge --no-ff --no-edit "$source"; then
+            git merge --abort
+            topic="sync/$BRANCH/$source"
+            git push origin "$source:refs/heads/$topic"
+            if [ -z "$(gh pr list --base "$BRANCH" --head "$topic" --json number --jq '.[0].number')" ]; then
+              gh pr create --base "$BRANCH" --head "$topic" --title "Merge $UPSTREAM into $BRANCH" --body "Resolve upstream conflicts before publishing." || {
+                echo "Open the conflict PR: https://github.com/$GITHUB_REPOSITORY/compare/$BRANCH...$topic?expand=1" >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              }
+            fi
             exit 0
           fi
-          gh api --method PATCH "$target/refs/heads/vplus" -f sha="$upstream" -F force=false --silent
-          echo "Updated vplus from $current to $upstream" >> "$GITHUB_STEP_SUMMARY"
+          git push origin "HEAD:refs/heads/$BRANCH"
+          gh workflow run personal-release.yml --ref "$BRANCH"
