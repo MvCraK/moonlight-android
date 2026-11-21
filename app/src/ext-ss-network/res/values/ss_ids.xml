@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [ADDED] -->
+<resources>
+    <item name="ssNetworkButton" type="id" />
+</resources>

@@ -15,7 +15,9 @@ import javax.crypto.spec.SecretKeySpec;
 
 /** An authenticated TCP connection owns exactly one native Fn gesture until closed. */
 final class VoiceFnConnection {
-    private final Socket socket = new Socket();
+    // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] BEGIN
+    private final Socket socket = com.limelight.extensions.ss.SsSocketFactory.INSTANCE.createSocket();
+    // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] END
     private final AtomicBoolean closing = new AtomicBoolean();
     private final CountDownLatch peerEnded = new CountDownLatch(1);
     private boolean watching;

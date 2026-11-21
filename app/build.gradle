@@ -179,3 +179,7 @@ dependencies {
     implementation 'org.apmem.tools:layouts:1.10@aar'
     testImplementation 'junit:junit:4.13.2'
 }
+
+// EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] BEGIN
+apply from: "src/ext-ss-network/ss.gradle"
+// EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] END

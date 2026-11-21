@@ -43,7 +43,9 @@
         android:name="android.hardware.type.pc"
         android:required="false"/>
 
+    <!-- EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] android:name below -->
     <application
+        android:name=".extensions.ss.SsApplication"
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/backup_rules_s"

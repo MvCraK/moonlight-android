@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [ADDED] -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false">
+        <shape android:shape="rectangle">
+            <corners android:radius="100dp" />
+            <solid android:color="#337C3AED" />
+        </shape>
+    </item>
+    <item android:state_focused="true">
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <corners android:radius="100dp" />
+                    <gradient android:angle="0" android:endColor="#596AFF" android:startColor="#7C3AED" />
+                    <stroke android:width="2dp" android:color="#E9DDFF" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="100dp" />
+            <gradient android:angle="0" android:endColor="#4B5AE0" android:startColor="#6A2FD0" />
+        </shape>
+    </item>
+    <item android:drawable="@drawable/bg_home_primary_action" />
+</selector>

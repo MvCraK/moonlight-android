@@ -194,7 +194,9 @@ public class MicUplinkConnection {
                     " frameMs=" + frameMs +
                     " tokenPrefix=" + tokenPrefixHex(token, 4));
             InetAddress serverAddress = InetAddress.getByName(hostAddress);
-            socket = new DatagramSocket();
+            // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] BEGIN
+            socket = com.limelight.extensions.ss.SsDatagramSocket.create();
+            // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] END
             socket.connect(new InetSocketAddress(serverAddress, hostPort));
 
             encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_OPUS);

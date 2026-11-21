@@ -259,7 +259,9 @@ public class NvConnection {
         // Try to find an address that works for this host
         InetAddress[] addrs = InetAddress.getAllByName(context.serverAddress.address);
         for (InetAddress addr : addrs) {
-            try (Socket s = new Socket()) {
+            // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] BEGIN
+            try (Socket s = com.limelight.extensions.ss.SsSocketFactory.INSTANCE.createSocket()) {
+            // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] END
                 s.setSoLinger(true, 0);
                 s.connect(new InetSocketAddress(addr, context.serverAddress.port), 1000);
                 return addr;
@@ -444,6 +446,10 @@ public class NvConnection {
             context.negotiatedRemoteStreaming = context.streamConfig.getRemote();
             context.negotiatedPacketSize = context.streamConfig.getMaxPacketSize();
         }
+        // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] BEGIN
+        com.limelight.extensions.ss.SsRoutes.tuneStream(context,
+                context.streamConfig.getMaxPacketSize(), this::resolveServerAddress);
+        // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] END
         
         //
         // Video stream format will be decided during the RTSP handshake

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [ADDED] -->
+<resources>
+    <string name="ss_toolbar_state">SS network: %1$s</string>
+    <string name="ss_panel_title">SS network</string>
+    <string name="ss_state_off">Off</string>
+    <string name="ss_state_unavailable">Not supported on this device (ARM only)</string>
+    <string name="ss_state_checking">On · checking nodes…</string>
+    <string name="ss_state_online">Connected · nodes reachable</string>
+    <string name="ss_state_degraded">On · some nodes unreachable</string>
+    <string name="ss_state_unconfigured">Not configured</string>
+    <string name="ss_empty_title">No network config yet</string>
+    <string name="ss_empty_body">Import a config file with the home TCP/UDP subscriptions and the company node to route 10.0.0.0/24 and 10.1.1.0/24 through SS.</string>
+    <string name="ss_section_nodes">Nodes</string>
+    <string name="ss_section_routes">Routes</string>
+    <string name="ss_node_home_tcp">Home · TCP</string>
+    <string name="ss_node_home_udp">Home · UDP stream</string>
+    <string name="ss_node_company">Company · TCP/UDP</string>
+    <string name="ss_latency_ms">%1$d ms</string>
+    <string name="ss_latency_unreachable">Unreachable</string>
+    <string name="ss_latency_checking">Checking…</string>
+    <string name="ss_latency_idle">—</string>
+    <string name="ss_latency_skipped">UDP only</string>
+    <string name="ss_route_home">Home</string>
+    <string name="ss_route_company">Company</string>
+    <string name="ss_route_home_detail">TCP via home TCP node · UDP via home UDP node</string>
+    <string name="ss_route_company_detail">TCP and UDP via company node</string>
+    <string name="ss_direct_note">Stream UDP is decrypted directly in Moonlight\'s receive thread, with no local relay. Mic uplink and voice Fn are routed too.</string>
+    <string name="ss_stat_received">Direct received</string>
+    <string name="ss_stat_updated">Subscriptions updated</string>
+    <string name="ss_action_connect">Connect</string>
+    <string name="ss_action_disconnect">Disconnect</string>
+    <string name="ss_action_import">Import</string>
+    <string name="ss_action_refresh">Update</string>
+    <string name="ss_action_probe">Test</string>
+    <string name="ss_action_close">Close</string>
+    <string name="ss_busy_toggle">Switching…</string>
+    <string name="ss_busy_refresh">Updating both home subscriptions…</string>
+    <string name="ss_busy_import">Reading config and updating subscriptions…</string>
+    <string name="ss_error_generic">Operation failed. Check the config file, subscriptions and network.</string>
+</resources>

@@ -1,0 +1,38 @@
+// EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [ADDED]
+// Built-in Shadowsocks routing. Everything lives under app/src/ext-ss-network;
+// app/build.gradle only applies this file. Needs python3 and a Rust toolchain
+// (cargo; rustup installs the Android targets on demand).
+def ssRoot = file('src/ext-ss-network')
+def ssAbis = ['arm64-v8a', 'armeabi-v7a']
+def ssCargo = layout.buildDirectory.dir('ss-network/cargo')
+def ssLibs = layout.buildDirectory.dir('ss-network/libs')
+
+android.sourceSets.main {
+    java.srcDirs += "${ssRoot}/java"
+    res.srcDirs += "${ssRoot}/res"
+    jniLibs.srcDirs += ssLibs.get().asFile
+}
+android.buildTypes.all {
+    proguardFile "${ssRoot}/proguard-ss.pro"
+}
+
+def buildSsNetwork = tasks.register('buildSsNetwork', Exec) {
+    inputs.files(fileTree("${ssRoot}/rust") { exclude 'target/**' })
+    inputs.file("${ssRoot}/jni/ss_hook.c")
+    inputs.property('ndkVersion', android.ndkVersion)
+    outputs.files(ssAbis.collectMany { abi ->
+        ['libss_network.so', 'libss_network_jni.so'].collect { ssLibs.get().file("${abi}/${it}") }
+    })
+    commandLine(['python3', file("${ssRoot}/rust/build-android.py"), android.ndkDirectory,
+                 ssCargo.get().asFile, ssLibs.get().asFile] + ssAbis)
+}
+tasks.configureEach {
+    if (name.startsWith('merge') && (name.endsWith('JniLibFolders') || name.endsWith('NativeLibs'))) {
+        dependsOn(buildSsNetwork)
+    }
+}
+
+dependencies {
+    // 2.4 needs no java.beans and no Java 8-only APIs, so it runs on API 21.
+    implementation 'org.yaml:snakeyaml:2.4'
+}

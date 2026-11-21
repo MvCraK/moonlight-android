@@ -186,6 +186,9 @@ public class NvHTTP {
                 .hostnameVerifier(hv)
                 .readTimeout(READ_TIMEOUT, TimeUnit.MILLISECONDS)
                 .connectTimeout(LONG_CONNECTION_TIMEOUT, TimeUnit.MILLISECONDS)
+                // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] BEGIN
+                .socketFactory(com.limelight.extensions.ss.SsSocketFactory.INSTANCE)
+                // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [MODIFIED] END
                 .proxy(Proxy.NO_PROXY)
                 .build();
 
