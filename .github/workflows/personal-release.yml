@@ -1,0 +1,86 @@
+name: Personal APK
+on:
+  push:
+    branches: [vplus]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: personal-release-vplus
+  cancel-in-progress: false
+
+env:
+  CHANNEL: vplus
+  CERTIFICATE: dd6e4a41c32b9e14d2a8594e9b2b74b1fe8544fdb85a3f0e99e0456c19851536
+
+jobs:
+  build:
+    if: github.repository == 'MvCraK/moonlight-android' && github.ref == 'refs/heads/vplus'
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.version.outputs.code }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-36 platforms;android-36.1 build-tools;36.0.0 ndk;28.2.13676358 cmake;3.22.1
+      - uses: actions/checkout@v5
+        with:
+          repository: AlkaidLab/moonlight-audio-haptics
+          ref: b3f97c3bb7500ea7b1985aea568e5c7b40308d3b
+          path: .deps/haptics
+          persist-credentials: false
+      - run: echo "AUDIO_HAPTICS_SDK_DIR=$GITHUB_WORKSPACE/.deps/haptics" >> "$GITHUB_ENV"
+      - id: version
+        run: echo "code=$(git rev-list --first-parent --count HEAD)" >> "$GITHUB_OUTPUT"
+      - run: |
+          rustup target add aarch64-linux-android armv7-linux-androideabi
+          ./gradlew -PpersonalVersionCode=${{ steps.version.outputs.code }}  :app:assembleNonRootRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-APK
+          overwrite: true
+          path: app/build/outputs/apk/nonRoot/release/*-unsigned.apk
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: vplus
+    permissions:
+      contents: write
+    env:
+      CODE: ${{ needs.build.outputs.code }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: unsigned-APK
+          path: unsigned
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: build-tools;36.0.0
+      - name: Sign channel APK
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key="$RUNNER_TEMP/release.p12"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$KEYSTORE" | base64 -d > "$key"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$key" --ks-key-alias "$CHANNEL" --ks-pass env:PASSWORD --out "$CHANNEL-$CODE.apk" unsigned/*.apk
+      - name: Verify and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/personal/publish.py

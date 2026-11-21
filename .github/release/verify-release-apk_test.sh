@@ -22,7 +22,7 @@ chmod +x "$tmp/apksigner" "$tmp/aapt"
 export APK_VERIFY_APKSIGNER="$tmp/apksigner" APK_VERIFY_AAPT="$tmp/aapt"
 export MOCK_SIGNER_DIGEST
 MOCK_SIGNER_DIGEST=$(python3 -c 'import runpy, sys; print(runpy.run_path(sys.argv[1])["SIGNING_CERT_SHA256"])' "$verifier")
-export MOCK_AAPT_OUTPUT="package: name='com.limelight.qiin' versionCode='121531001' versionName='12.15.31' platformBuildVersionName='16' compileSdkVersionCodename='16'"
+export MOCK_AAPT_OUTPUT="package: name='com.mvcrak.moonlight.vplus' versionCode='121531001' versionName='12.15.31' platformBuildVersionName='16' compileSdkVersionCodename='16'"
 
 python3 - "$tmp" <<'PY'
 import pathlib
@@ -58,5 +58,5 @@ expect_failure env MOCK_AAPT_FAIL=1 python3 "$verifier" "$tmp/valid.apk" 12.15.3
 expect_failure env MOCK_EXTRA_SIGNER=1 python3 "$verifier" "$tmp/valid.apk" 12.15.31 121531001
 expect_failure env MOCK_SIGNER_DIGEST=bad python3 "$verifier" "$tmp/valid.apk" 12.15.31 121531001
 expect_failure env MOCK_AAPT_OUTPUT="package: name='wrong.package' versionCode='121531001' versionName='12.15.31'" python3 "$verifier" "$tmp/valid.apk" 12.15.31 121531001
-expect_failure env MOCK_AAPT_OUTPUT="package: name='com.limelight.qiin' versionName='12.15.31'" python3 "$verifier" "$tmp/valid.apk" 12.15.31 121531001
+expect_failure env MOCK_AAPT_OUTPUT="package: name='com.mvcrak.moonlight.vplus' versionName='12.15.31'" python3 "$verifier" "$tmp/valid.apk" 12.15.31 121531001
 echo 'verify-release-apk tests passed'

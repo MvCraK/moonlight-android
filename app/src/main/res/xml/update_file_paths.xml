@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <cache-path name="verified_updates" path="updates/" />
     <external-path name="external_downloads" path="Download/" />
     <external-files-path name="app_updates" path="updates/" />
     <!-- Crash report file shared via Intent.ACTION_SEND. -->

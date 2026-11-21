@@ -14,10 +14,7 @@ import subprocess
 import sys
 import zipfile
 
-# Public certificate fingerprint verified against official v12.15.17 and
-# v12.15.31 releases. Key rotation requires reviewing Android signing lineage
-# and installation compatibility before updating this pin.
-SIGNING_CERT_SHA256 = 'fd582390f042145bea22433299b657ce79be69f23c17171232f55d6cfc12d7ad'
+SIGNING_CERT_SHA256 = 'dd6e4a41c32b9e14d2a8594e9b2b74b1fe8544fdb85a3f0e99e0456c19851536'
 
 
 def fail(message):
@@ -60,7 +57,7 @@ def main():
     if len(package_lines) != 1:
         fail('aapt did not return exactly one package description')
     attrs = dict(re.findall(r"(?:^|\s)(name|versionCode|versionName)='([^']*)'", package_lines[0]))
-    for key, expected in [('name', 'com.limelight.qiin'), ('versionCode', expected_code), ('versionName', expected_version)]:
+    for key, expected in [('name', 'com.mvcrak.moonlight.vplus'), ('versionCode', expected_code), ('versionName', expected_version)]:
         if attrs.get(key) != expected:
             fail(f'APK {key} mismatch: expected {expected!r}, got {attrs.get(key)!r}')
 

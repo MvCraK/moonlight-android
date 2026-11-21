@@ -28,7 +28,9 @@ import android.widget.TextView
 import android.widget.Toast
 
 import androidx.annotation.RequiresApi
-import androidx.core.os.ConfigurationCompat
+import android.content.pm.PackageManager
+import androidx.core.content.FileProvider
+import com.limelight.BuildConfig
 
 import com.limelight.R
 import com.limelight.handbook.HandbookLauncher
@@ -275,13 +277,17 @@ object UpdateManager {
 
                 // Size and SHA256 verification can read the complete APK. Keep it
                 // off the main thread even when this was triggered by the UI poll.
-                val invalidReason = validateDownloadedApk(
-                    context,
-                    downloadedUri,
-                    completion.expectedSize,
-                    completion.expectedSha256
-                )
+                val verifiedFile = File(context.cacheDir, "updates/$downloadId.apk")
+                val invalidReason = runCatching {
+                    verifiedFile.parentFile?.mkdirs()
+                    context.contentResolver.openInputStream(downloadedUri)!!.use { input ->
+                        verifiedFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    validateDownloadedApk(context, Uri.fromFile(verifiedFile), completion.expectedSize,
+                        completion.expectedSha256) ?: validatePackage(context, verifiedFile)
+                }.getOrElse { it.toString() }
                 if (invalidReason != null) {
+                    verifiedFile.delete()
                     Log.w(TAG, "Downloaded update APK failed validation: $invalidReason")
                     retryOrNotifyDownload(
                         context,
@@ -294,7 +300,7 @@ object UpdateManager {
                 }
 
                 Log.d(TAG, "下载成功，准备安装: ${completion.apkName}")
-                mainHandler.post { installApk(context, downloadId) }
+                mainHandler.post { installApk(context, verifiedFile) }
             }
 
             DownloadManager.STATUS_FAILED -> {
@@ -427,14 +433,10 @@ object UpdateManager {
     // 更新检查
     // ------------------------------------------------------------------
 
-    private fun fetchUpdateInfo(context: Context): UpdateInfo? {
-        val metadata = if (isChineseLocale(context)) {
-            UpdateMetadataClient.fetchForChinese()
-        } else {
-            UpdateMetadataClient.fetchForGithub()
-        } ?: return null
-
+    private fun fetchUpdateInfo(): UpdateInfo? {
+        val metadata = UpdateMetadataClient.fetch() ?: return null
         return UpdateInfo(
+            versionCode = metadata.versionCode,
             version = metadata.version,
             releaseNotes = metadata.releaseNotes,
             releasePageUrl = metadata.releasePageUrl,
@@ -460,7 +462,7 @@ object UpdateManager {
                     return
                 }
                 try {
-                    updateInfo = fetchUpdateInfo(appContext)
+                    updateInfo = fetchUpdateInfo()
                 } catch (e: Exception) {
                     Log.e(TAG, "检查更新失败", e)
                 }
@@ -506,12 +508,12 @@ object UpdateManager {
             }
 
             val currentVersion = getCurrentVersion(context)
-            if (isNewVersionAvailable(currentVersion, updateInfo.version)) {
+            if (updateInfo.versionCode > BuildConfig.VERSION_CODE) {
                 // 后台启动检查时如果用户已跳过该版本，不要打扰；手动检查仍弹
                 if (!showToast) {
                     val skipped = context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE)
                             .getString(PREF_SKIPPED_VERSION, null)
-                    if (skipped != null && skipped == updateInfo.version) {
+                    if (skipped != null && skipped == updateInfo.versionCode.toString()) {
                         Log.d(TAG, "用户已跳过版本 $skipped，启动检查不弹窗")
                         return
                     }
@@ -616,7 +618,7 @@ object UpdateManager {
             builder.setPositiveButton(context.getString(R.string.update_btn_browser_download)) { _, _ ->
                 val intent = Intent(
                     Intent.ACTION_VIEW,
-                    UpdateMetadataClient.GITHUB_RELEASE_PAGE_URL.toUri()
+                    updateInfo.downloadUrls.single().toUri()
                 )
                 context.startActivity(intent)
             }
@@ -647,7 +649,7 @@ object UpdateManager {
             // “稍后”按钮长按 = 跳过此版本（启动检查不再弹，手动检查仍弹）
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setOnLongClickListener {
                 context.getSharedPreferences("update_prefs", Context.MODE_PRIVATE)
-                        .edit { putString(PREF_SKIPPED_VERSION, updateInfo.version) }
+                        .edit { putString(PREF_SKIPPED_VERSION, updateInfo.versionCode.toString()) }
                 Toast.makeText(
                     context,
                     context.getString(R.string.toast_update_skipped_version, updateInfo.version),
@@ -920,28 +922,23 @@ object UpdateManager {
     // APK 安装
     // ------------------------------------------------------------------
 
-    private fun installApk(context: Context, downloadId: Long) {
+    private fun validatePackage(context: Context, file: File): String? {
+        val pm = context.packageManager
+        val info = pm.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNATURES)
+            ?: return "Invalid APK"
+        val installed = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
+        if (info.packageName != installed.packageName || info.versionCode <= installed.versionCode ||
+            installed.signatures.isNullOrEmpty() ||
+            info.signatures?.toSet() != installed.signatures?.toSet()) return "Incompatible update"
+        return null
+    }
+
+    private fun installApk(context: Context, verifiedFile: File) {
         try {
-            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager ?: return
-
-            val downloadedUri = dm.getUriForDownloadedFile(downloadId)
-            if (downloadedUri == null) {
-                Log.w(TAG, "无法获取下载文件 URI")
-                Toast.makeText(context, context.getString(R.string.toast_cannot_get_download_file), Toast.LENGTH_LONG).show()
-                return
-            }
-
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.update_fileprovider", verifiedFile)
             val installIntent = Intent(Intent.ACTION_VIEW)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                // Android 7.0+ 使用 content:// URI
-                // DownloadManager.getUriForDownloadedFile 在 N+ 已经返回 content:// URI
-                installIntent.setDataAndType(downloadedUri, "application/vnd.android.package-archive")
-                installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } else {
-                installIntent.setDataAndType(downloadedUri, "application/vnd.android.package-archive")
-            }
-
+            installIntent.setDataAndType(uri, "application/vnd.android.package-archive")
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(installIntent)
 
@@ -966,80 +963,6 @@ object UpdateManager {
             return "0.0.0"
         }
     }
-
-    private fun isNewVersionAvailable(currentVersion: String, latestVersion: String): Boolean {
-        try {
-            return compareVersions(latestVersion, currentVersion) > 0
-        } catch (e: Exception) {
-            Log.e(TAG, "版本号格式错误: current=$currentVersion, latest=$latestVersion", e)
-            return false
-        }
-    }
-
-    private fun compareVersions(leftVersion: String, rightVersion: String): Int {
-        val left = parseVersion(leftVersion)
-        val right = parseVersion(rightVersion)
-
-        val numberCount = left.numbers.size.coerceAtLeast(right.numbers.size)
-        for (i in 0 until numberCount) {
-            val leftNumber = left.numbers.getOrElse(i) { 0 }
-            val rightNumber = right.numbers.getOrElse(i) { 0 }
-            if (leftNumber != rightNumber) {
-                return leftNumber.compareTo(rightNumber)
-            }
-        }
-
-        if (left.qualifierRank != right.qualifierRank) {
-            return left.qualifierRank.compareTo(right.qualifierRank)
-        }
-
-        val qualifierNumberCount = left.qualifierNumbers.size.coerceAtLeast(right.qualifierNumbers.size)
-        for (i in 0 until qualifierNumberCount) {
-            val leftNumber = left.qualifierNumbers.getOrElse(i) { 0 }
-            val rightNumber = right.qualifierNumbers.getOrElse(i) { 0 }
-            if (leftNumber != rightNumber) {
-                return leftNumber.compareTo(rightNumber)
-            }
-        }
-
-        return 0
-    }
-
-    private fun parseVersion(version: String): ParsedVersion {
-        val normalized = version.trim()
-                .replaceFirst("^[Vv]".toRegex(), "")
-                .substringBefore('+')
-        val qualifierStart = normalized.indexOfFirst { it == '-' || it == '_' || it.isWhitespace() }
-        val numberPart = if (qualifierStart >= 0) normalized.substring(0, qualifierStart) else normalized
-        val qualifierPart = if (qualifierStart >= 0) normalized.substring(qualifierStart + 1) else ""
-        val numbers = numberPart.split('.')
-                .map { part -> part.toIntOrNull() ?: 0 }
-                .ifEmpty { listOf(0) }
-        val qualifierTokens = qualifierPart
-                .lowercase()
-                .split('.', '-', '_', ' ')
-                .filter { it.isNotBlank() }
-        val qualifierName = qualifierTokens.firstOrNull { token -> token.any { it.isLetter() } } ?: ""
-        val qualifierRank = when (qualifierName) {
-            "hotfix", "fix", "patch" -> 1
-            "", "stable", "release", "final" -> 0
-            "rc" -> -1
-            "beta" -> -2
-            "alpha" -> -3
-            else -> -1
-        }
-        val qualifierNumbers = qualifierTokens.mapNotNull { token ->
-            "\\d+".toRegex().find(token)?.value?.toIntOrNull()
-        }
-
-        return ParsedVersion(numbers, qualifierRank, qualifierNumbers)
-    }
-
-    private data class ParsedVersion(
-            val numbers: List<Int>,
-            val qualifierRank: Int,
-            val qualifierNumbers: List<Int>
-    )
 
     // ------------------------------------------------------------------
     // 远程背景图代理（不参与版本更新）
@@ -1242,12 +1165,6 @@ object UpdateManager {
         }
         tries.add(url)
         return tries
-    }
-
-    private fun isChineseLocale(context: Context): Boolean {
-        val locale = ConfigurationCompat.getLocales(context.resources.configuration)[0]
-            ?: Locale.getDefault()
-        return locale.language.equals("zh", ignoreCase = true)
     }
 
     private fun getEffectiveProxyPrefixes(context: Context): Array<String> {
@@ -1571,6 +1488,7 @@ object UpdateManager {
     )
 
     private class UpdateInfo(
+            val versionCode: Int,
             val version: String,
             val releaseNotes: String?,
             val releasePageUrl: String?,
