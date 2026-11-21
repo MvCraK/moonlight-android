@@ -1,0 +1,32 @@
+name: Sync V+ upstream
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: sync-vplus
+
+jobs:
+  sync:
+    if: github.repository == 'MvCraK/moonlight-android' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fast-forward vplus to upstream master
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          upstream=$(gh api repos/qiin2333/moonlight-vplus/git/ref/heads/master --jq .object.sha)
+          target="repos/$GITHUB_REPOSITORY/git"
+          current=$(gh api "$target/ref/heads/vplus" --jq .object.sha)
+          if [[ "$current" == "$upstream" ]]; then
+            echo "vplus is up to date at $current" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh api --method PATCH "$target/refs/heads/vplus" -f sha="$upstream" -F force=false --silent
+          echo "Updated vplus from $current to $upstream" >> "$GITHUB_STEP_SUMMARY"
