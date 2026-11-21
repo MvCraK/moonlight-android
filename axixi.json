@@ -1,0 +1,13 @@
+{
+  "packageName": "com.mvcrak.moonlight.axixi",
+  "latest": {
+    "versionCode": 2197,
+    "versionName": "26.11.07",
+    "commit": "c4438a0a3d93ea1c2b815aac85095fa7433fc4fc",
+    "size": 12361875,
+    "sha256": "eb54d50d551f5b56efd117a1306702148d6e6e2ba296753a0a9871cd0c30eeaa",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2197/axixi-2197.apk",
+    "notes": "Leave upstream conflicts for manual PR review [skip ci]"
+  },
+  "history": []
+}
