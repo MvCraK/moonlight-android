@@ -45,7 +45,7 @@ jobs:
         run: echo "code=$(git rev-list --first-parent --count HEAD)" >> "$GITHUB_OUTPUT"
       - run: |
           rustup target add aarch64-linux-android armv7-linux-androideabi
-          ./gradlew -PpersonalVersionCode=${{ steps.version.outputs.code }}  :app:assembleNonRootRelease
+          sh gradlew -PpersonalVersionCode=${{ steps.version.outputs.code }} :app:assembleNonRootRelease
       - uses: actions/upload-artifact@v4
         with:
           name: unsigned-APK
