@@ -160,6 +160,13 @@
     </PreferenceCategory>
     <PreferenceCategory android:title="@string/category_audio_settings"
         android:key="category_audio_settings">
+        <!-- EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN -->
+        <CheckBoxPreference
+            android:key="checkbox_voice_input_enabled"
+            android:title="悬浮语音按钮"
+            android:summary="点击开始说话，再点结束。拖动按钮可吸边。需要支持 Fn 的 StarCore Pro。"
+            android:defaultValue="true" />
+        <!-- EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END -->
         <ListPreference
             android:key="list_audio_config"
             android:title="@string/title_audio_config_list"

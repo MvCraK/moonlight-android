@@ -1,0 +1,18 @@
+<!-- EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [ADDED] -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/voiceInputLayer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:elevation="8dp"
+    android:splitMotionEvents="false"
+    android:visibility="gone">
+    <ImageButton
+        android:id="@+id/voiceInputButton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|left"
+        android:background="@drawable/bg_voice_input"
+        android:src="@drawable/ic_voice_action"
+        android:padding="13dp"
+        android:contentDescription="语音输入，点击开始，长按展开快捷键" />
+</FrameLayout>

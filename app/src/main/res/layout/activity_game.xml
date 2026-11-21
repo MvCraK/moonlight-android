@@ -207,4 +207,7 @@
                 android:src="@drawable/ic_axi_game_pad_move" />
         </FrameLayout>
     </FrameLayout>
+    <!-- EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN -->
+    <include layout="@layout/voice_input_overlay" />
+    <!-- EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END -->
 </merge>

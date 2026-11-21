@@ -154,6 +154,9 @@ import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+// EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+import com.limelight.extensions.voice.VoiceInputExtension;
+// EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
 
 
 public class Game extends Activity implements SurfaceHolder.Callback,
@@ -332,6 +335,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private AndroidAudioRenderer audioRenderer;
     private boolean reportedCrash;
     private boolean micToggleInFlight;
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+    private final VoiceInputExtension voice = new VoiceInputExtension();
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
     private boolean pendingMicToggleAfterPermission;
 
     private WifiManager.WifiLock highPerfWifiLock;
@@ -1093,6 +1099,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                     usbDriverServiceConnection, Service.BIND_AUTO_CREATE);
         }
 
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        initVoiceInput();
+
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         //悬浮球
         if(prefConfig.enableAXFloating){
             initFloatingView();
@@ -1634,6 +1644,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        voice.reset();
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         cancelDsTouchpadDrag();
         releaseDsTouchpadInput();
         if (virtualMouseOverlay != null) {
@@ -1720,6 +1733,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
         }
 
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        voice.setVisible(connected && !isHidingOverlays);
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         updateDsTouchpadLayout();
         revealDsTouchpadAndScheduleAutoHide();
 
@@ -1844,7 +1860,12 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (!hasFocus) cancelStylusInput();
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        if (!hasFocus) {
+            voice.reset();
+            cancelStylusInput();
+        }
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
 
         // EXTENSION DEVELOPMENT [EXT-IME-ACCESSORY-BAR] [MODIFIED] BEGIN
         if (!hasFocus && imeKeyboardExtensionController != null) {
@@ -2290,6 +2311,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     protected void onPause() {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        voice.reset();
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         cancelStylusInput();
         activityResumed = false;
         cancelDsTouchpadDrag();
@@ -4029,6 +4053,11 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             view.requestUnbufferedDispatch(event);
         }
 
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        if (voice.isEnabled() && grabbedInput && !disableMouseModel) {
+            return voice.dispatchTouch(view, event);
+        }
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         return handleMotionEvent(view, event);
     }
 
@@ -4048,6 +4077,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     }
 
     private void stopConnection(final Runnable afterStop) {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        voice.reset();
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         streamSessionBackgrounded = false;
         restoreInputGrabAfterBackground = false;
         restartMicAfterBackground = false;
@@ -4056,6 +4088,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (connecting || connected) {
             logSessionInfo("CONNECT", "请求停止串流连接");
             connecting = connected = false;
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+            voice.setVisible(connected && !isHidingOverlays);
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             UiHelper.notifyHdrWindowStatus(this, false);
             updatePipAutoEnter();
             audioRenderer = null;
@@ -4134,6 +4169,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public void connectionTerminated(final int errorCode) {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        runOnUiThread(voice::reset);
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         if (errorCode == MoonBridge.ML_ERROR_GRACEFUL_TERMINATION) {
             logSessionInfo("CONNECT", "连接正常结束, code=" + errorCode);
         }
@@ -4297,6 +4335,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             public void run() {
                 connected = true;
                 connecting = false;
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+                voice.setVisible(connected && !isHidingOverlays);
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
                 if (usbDriverBinder != null) {
                     usbDriverBinder.configureUsbIp(prefConfig.usbIpMode ? getIntent().getStringExtra(EXTRA_HOST) : null, conn != null ? conn.getUsbIpImportHost() : null, conn != null ? conn.getUsbIpTlsToken() : null);
                     usbDriverBinder.setUsbIpSessionActive(true);
@@ -4680,6 +4721,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             if (pendingMicToggleAfterPermission) {
                 pendingMicToggleAfterPermission = false;
                 switchMic();
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+            } else if (voice.isEnabled()) {
+                Toast.makeText(this, "已允许麦克风，请点击语音按钮", Toast.LENGTH_SHORT).show();
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             }
             return;
         }
@@ -4833,7 +4878,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         builder.append(stats.decodeTimeMs >= 0 ? String.format(Locale.US, "%.2f ms", stats.decodeTimeMs) : "--");
         builder.append("  丢包率：").append(String.format(Locale.US, "%.2f%%", stats.packetLossPercent));
         builder.append("  FPS：").append(String.format(Locale.US, "%.2f", stats.totalFps));
-        if (micStatus == 1) {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        if (isMicInUse()) {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             builder.append(" Mic");
         }
         return builder.toString();
@@ -4898,7 +4945,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         addPerfRow("丢包率", String.format(Locale.US, "%.2f%%", stats.packetLossPercent));
         addPerfRow("解码延迟", stats.decodeTimeMs >= 0 ? String.format(Locale.US, "%.2f ms", stats.decodeTimeMs) : "--");
         addPerfRow("主机延迟", stats.hostProcessingLatencyMs > 0 ? String.format(Locale.US, "%.1f ms", stats.hostProcessingLatencyMs) : "--");
-        addPerfRow("麦克风", micStatus == 1 ? "开启" : "关闭");
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        addPerfRow("麦克风", isMicInUse() ? "开启" : "关闭");
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         addPerfRow("游戏震动", buildNativeGameHapticsStatusText());
         addPerfRow("音频震动", buildAudioHapticsStatusText());
         addPerfRow("USB手柄", buildUsbControllerStatusText());
@@ -5689,6 +5738,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             return;
         }
 
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        voice.reset();
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         streamSessionBackgrounded = true;
         backgroundReconnectEligibleUntilElapsedMs = Long.MAX_VALUE;
         logSessionInfo("LIFECYCLE", "串流进入后台挂起，保留网络会话");
@@ -5855,10 +5907,14 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 Math.round(videoZoomTapPoint.x * (referenceWidth - 1))));
         int positionY = Math.max(0, Math.min(referenceHeight - 1,
                 Math.round(videoZoomTapPoint.y * (referenceHeight - 1))));
-        conn.sendMousePosition((short) positionX, (short) positionY,
-                (short) referenceWidth, (short) referenceHeight);
-        conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT);
-        conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT);
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        voice.afterStop(() -> {
+            conn.sendMousePosition((short) positionX, (short) positionY,
+                    (short) referenceWidth, (short) referenceHeight);
+            conn.sendMouseButtonDown(MouseButtonPacket.BUTTON_LEFT);
+            conn.sendMouseButtonUp(MouseButtonPacket.BUTTON_LEFT);
+        });
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
     }
 
     private void refreshVideoZoomOverlayZOrder() {
@@ -5898,8 +5954,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                         Math.round(normalizedX * (width - 1))));
                 int positionY = Math.max(0, Math.min(height - 1,
                         Math.round(normalizedY * (height - 1))));
-                conn.sendMousePosition((short) positionX, (short) positionY,
-                        (short) width, (short) height);
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+                voice.sendMousePosition(conn, (short) positionX, (short) positionY, (short) width, (short) height);
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             }
 
             @Override
@@ -5922,12 +5979,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                         break;
                 }
 
-                if (pressed) {
-                    conn.sendMouseButtonDown(remoteButton);
-                }
-                else {
-                    conn.sendMouseButtonUp(remoteButton);
-                }
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+                voice.sendMouseButton(conn, remoteButton, pressed);
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             }
 
             @Override
@@ -6847,12 +6901,51 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         }
     }
 
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+    private boolean isMicInUse() {
+        return micStatus == 1 || voice.isRecording();
+    }
+
+    private void initVoiceInput() {
+        final NvConnection stream = conn;
+        voice.attach(this, stream, keyboardTranslator, this::handleMotionEvent, new VoiceInputExtension.Host() {
+            @Override public boolean canSendInput() {
+                return connected && activityResumed && hasWindowFocus() && !streamSessionBackgrounded
+                        && !isHidingOverlays && conn == stream;
+            }
+            @Override public boolean prepareMicrophone() { return canStartVoiceInput(); }
+            @Override public byte modifiers() { return getModifierState(); }
+        });
+    }
+
+    private boolean canStartVoiceInput() {
+        if (micToggleInFlight) {
+            Toast.makeText(this, "麦克风正在切换，请稍后再按", Toast.LENGTH_SHORT).show();
+            return false;
+        }
+        if (!MicUplinkConnection.isSupported()) {
+            Toast.makeText(this, R.string.mic_uplink_not_supported, Toast.LENGTH_LONG).show();
+            return false;
+        }
+        if (!isRecordAudioPermissionGranted()) {
+            if (!awaitingRecordAudioPermission) {
+                awaitingRecordAudioPermission = true;
+                requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO}, REQUEST_RECORD_AUDIO_PERMISSION);
+            }
+            return false;
+        }
+        return true;
+    }
+
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
     //麦克风状态 0 关闭 1开启
     public int micStatus=0;
 
     //开启关闭 麦克风
     public void switchMic(){
-        if (conn == null || micToggleInFlight) {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        if (conn == null || micToggleInFlight || voice.isBusy()) {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             return;
         }
 

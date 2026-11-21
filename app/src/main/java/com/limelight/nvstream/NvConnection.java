@@ -22,6 +22,9 @@ import java.security.cert.X509Certificate;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.Semaphore;
+// EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+import java.util.concurrent.atomic.AtomicBoolean;
+// EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -49,6 +52,10 @@ public class NvConnection {
     private final boolean isMonkey;
     private final Context appContext;
     private MicUplinkConnection micUplinkConnection;
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+    private final VoiceGestureSession voice = new VoiceGestureSession();
+    private boolean micSessionClosed;
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
     private String lastMicUplinkMessage;
 
     public NvConnection(Context appContext, ComputerDetails.AddressTuple host, int httpsPort, String uniqueId, StreamConfiguration config, LimelightCryptoProvider cryptoProvider, X509Certificate serverCert)
@@ -91,9 +98,11 @@ public class NvConnection {
     public void stop() {
         context.usbIpImportHost = null;
         context.usbIpTlsToken = null;
-        if (micUplinkConnection != null) {
-            micUplinkConnection.stop();
-            micUplinkConnection = null;
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        synchronized (this) {
+            micSessionClosed = true;
+            stopMicUplink();
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         }
 
         // Interrupt any pending connection. This is thread-safe.
@@ -124,11 +133,29 @@ public class NvConnection {
         return lastMicUplinkMessage;
     }
 
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+    public synchronized boolean beginVoiceGesture(AtomicBoolean cancelled, Runnable onDisconnect) {
+        try {
+            return voice.begin(this, context, cancelled, onDisconnect);
+        } catch (Exception error) {
+            lastMicUplinkMessage = error.getMessage();
+            return false;
+        }
+    }
+
+    public synchronized boolean endVoiceGesture() {
+        return voice.end(this);
+    }
+
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
     public synchronized boolean isMicUplinkActive() {
         return micUplinkConnection != null;
     }
 
     public synchronized void stopMicUplink() {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        voice.close();
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         if (micUplinkConnection != null) {
             micUplinkConnection.stop();
             micUplinkConnection = null;
@@ -144,7 +171,18 @@ public class NvConnection {
         lastMicUplinkMessage = "mic-uplink stopped";
     }
 
-    public synchronized boolean startMicUplink() {
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+    public boolean startMicUplink() {
+        return startMicUplink(new AtomicBoolean());
+    }
+
+    synchronized boolean startMicUplink(AtomicBoolean cancelled) {
+        if (cancelled.get()) return false;
+        if (micSessionClosed) {
+            lastMicUplinkMessage = "Stream ended";
+            return false;
+        }
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         if (micUplinkConnection != null) {
             lastMicUplinkMessage = "mic-uplink is already active";
             return true;
@@ -175,7 +213,9 @@ public class NvConnection {
                     context.negotiatedMicSampleRate,
                     context.negotiatedMicChannels,
                     context.negotiatedMicFrameMs);
-            if (!micUplinkConnection.start()) {
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+            if (!micUplinkConnection.start(cancelled)) {
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
                 lastMicUplinkMessage = micUplinkConnection.getLastErrorMessage();
                 LimeLog.warning("Failed to start mic-uplink: " + lastMicUplinkMessage);
                 micUplinkConnection.stop();
@@ -187,7 +227,9 @@ public class NvConnection {
             return true;
         }
         catch (Exception e) {
-            lastMicUplinkMessage = "mic-uplink unavailable: " + e.getMessage();
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+            lastMicUplinkMessage = VoiceGestureSession.uplinkError(e);
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             LimeLog.warning(lastMicUplinkMessage);
             if (micUplinkConnection != null) {
                 micUplinkConnection.stop();

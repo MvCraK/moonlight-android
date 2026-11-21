@@ -931,6 +931,12 @@ public class NvHTTP {
 
         try {
             String rawTokenHex = getXmlString(xmlStr, "axiMicToken", true);
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+            String fnPort = getXmlString(xmlStr, "axiFnPort", false);
+            String fnKey = getXmlString(xmlStr, "axiFnKey", false);
+            context.fnPort = fnPort == null ? 0 : Integer.parseInt(fnPort);
+            context.fnKey = fnKey == null ? null : hexToBytes(fnKey);
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             context.negotiatedMicPort = Integer.parseInt(getXmlString(xmlStr, "axiMicPort", true));
             context.negotiatedMicSessionId = Integer.parseUnsignedInt(getXmlString(xmlStr, "axiMicSessionId", true));
             context.negotiatedMicCodec = getXmlString(xmlStr, "axiMicCodec", true);

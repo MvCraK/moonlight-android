@@ -29,6 +29,10 @@ public class ConnectionContext {
     public volatile String usbIpTlsToken;
 
     public boolean negotiatedMicUplinkEnabled;
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+    public int fnPort;
+    public byte[] fnKey;
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
     public int negotiatedMicPort;
     public int negotiatedMicSessionId;
     public String negotiatedMicCodec;

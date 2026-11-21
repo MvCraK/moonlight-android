@@ -54,7 +54,10 @@ final class SettingsCatalog {
             new Section("实体键盘与辅助输入", "checkbox_keyboard_esc_opens_game_menu",
                 "checkbox_enable_clear_default_special_button", "import_switch_button_file")),
         new Group("声音", "声道与播放位置",
-            new Section("音频输出", "list_audio_config", "checkbox_enable_audiofx", "checkbox_host_audio")),
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+            new Section("音频输出", "list_audio_config", "checkbox_enable_audiofx", "checkbox_host_audio"),
+            new Section("远程语音输入", "checkbox_voice_input_enabled")),
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         new Group("音频震动", "输出目标、强度与语音过滤",
             new Section("音频震动", "checkbox_enable_audio_haptics", "list_audio_haptics_output_target",
                 "seekbar_audio_haptics_strength", "list_audio_haptics_voice_filter",

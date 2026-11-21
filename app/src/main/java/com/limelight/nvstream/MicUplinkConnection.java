@@ -17,6 +17,9 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.CountDownLatch;
+// EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+import java.util.concurrent.atomic.AtomicBoolean;
+// EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
 
 public class MicUplinkConnection {
     private static final int AXI_MIC_PAYLOAD_OPUS = 1;
@@ -89,6 +92,13 @@ public class MicUplinkConnection {
     }
 
     public boolean start() {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        return start(new AtomicBoolean());
+    }
+
+    boolean start(AtomicBoolean cancelled) {
+        if (cancelled.get()) return false;
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         if (!isConfigurationSupported()) {
             LimeLog.warning("mic-uplink configuration rejected: " + getLastErrorMessage());
             return false;
@@ -96,7 +106,9 @@ public class MicUplinkConnection {
 
         CountDownLatch startupLatch = new CountDownLatch(1);
         running = true;
-        workerThread = new Thread(() -> runWorker(startupLatch), "MicUplinkConnection");
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        workerThread = new Thread(() -> runWorker(startupLatch, cancelled), "MicUplinkConnection");
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         workerThread.start();
 
         try {
@@ -115,17 +127,21 @@ public class MicUplinkConnection {
     public void stop() {
         running = false;
 
-        if (audioRecord != null) {
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        AudioRecord recorder = audioRecord;
+        if (recorder != null) {
             try {
-                audioRecord.stop();
+                recorder.stop();
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             }
             catch (IllegalStateException ignored) {
             }
         }
 
-        if (socket != null) {
-            socket.close();
-        }
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+        DatagramSocket activeSocket = socket;
+        if (activeSocket != null) activeSocket.close();
+        // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
 
         if (workerThread != null) {
             workerThread.interrupt();
@@ -163,7 +179,9 @@ public class MicUplinkConnection {
         return true;
     }
 
-    private void runWorker(CountDownLatch startupLatch) {
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+    private void runWorker(CountDownLatch startupLatch, AtomicBoolean cancelled) {
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         byte[] pcmFrame = new byte[frameBytes];
         MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
 
@@ -204,6 +222,12 @@ public class MicUplinkConnection {
                 throw new IllegalStateException("Unable to initialize microphone capture");
             }
 
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+            if (cancelled.get()) {
+                running = false;
+                return;
+            }
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             audioRecord.startRecording();
             LimeLog.info("mic-uplink capture and encoder initialized");
             startupLatch.countDown();
@@ -216,7 +240,9 @@ public class MicUplinkConnection {
                 long presentationTimeUs = nextPresentationTimeUs;
                 queueInputFrame(pcmFrame, presentationTimeUs);
                 nextPresentationTimeUs += frameMs * 1000L;
-                drainEncoder(bufferInfo);
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+                drainEncoder(bufferInfo, cancelled);
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             }
         }
         catch (Exception e) {
@@ -264,7 +290,9 @@ public class MicUplinkConnection {
         encoder.queueInputBuffer(inputBufferIndex, 0, pcmFrame.length, presentationTimeUs, 0);
     }
 
-    private void drainEncoder(MediaCodec.BufferInfo bufferInfo) throws Exception {
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+    private void drainEncoder(MediaCodec.BufferInfo bufferInfo, AtomicBoolean cancelled) throws Exception {
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         while (running) {
             int outputBufferIndex = encoder.dequeueOutputBuffer(bufferInfo, 0);
             if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
@@ -283,7 +311,9 @@ public class MicUplinkConnection {
                 ByteBuffer payload = outputBuffer.duplicate();
                 payload.position(bufferInfo.offset);
                 payload.limit(bufferInfo.offset + bufferInfo.size);
-                sendPacket(payload, bufferInfo.presentationTimeUs);
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+                if (!cancelled.get()) sendPacket(payload, bufferInfo.presentationTimeUs);
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             }
 
             encoder.releaseOutputBuffer(outputBufferIndex, false);
