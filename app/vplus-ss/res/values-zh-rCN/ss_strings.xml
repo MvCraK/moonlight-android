@@ -1,0 +1,36 @@
+<resources>
+    <string name="ss_toolbar">SS 组网</string>
+    <string name="ss_toolbar_state">SS 组网：%1$s</string>
+    <string name="ss_panel_title">SS 组网</string>
+    <string name="ss_state_off">未开启</string>
+    <string name="ss_state_checking">已开启 · 正在检测节点…</string>
+    <string name="ss_state_online">已连接 · 节点全部可达</string>
+    <string name="ss_state_degraded">已开启 · 部分节点不可达</string>
+    <string name="ss_state_unconfigured">尚未配置</string>
+    <string name="ss_empty_title">尚未导入组网配置</string>
+    <string name="ss_empty_body">导入包含家庭 TCP/UDP 订阅和公司节点的配置文件后，即可开启内置 SS 分流。</string>
+    <string name="ss_section_nodes">节点</string>
+    <string name="ss_section_routes">分流</string>
+    <string name="ss_node_home_tcp">家庭 · TCP</string>
+    <string name="ss_node_home_udp">家庭 · UDP 串流</string>
+    <string name="ss_node_company">公司 · TCP/UDP</string>
+    <string name="ss_latency_ms">%1$d ms</string>
+    <string name="ss_latency_unreachable">不可达</string>
+    <string name="ss_latency_checking">检测中…</string>
+    <string name="ss_latency_idle">—</string>
+    <string name="ss_latency_skipped">仅 UDP</string>
+    <string name="ss_route_home">家庭</string>
+    <string name="ss_route_company">公司</string>
+    <string name="ss_route_home_detail">TCP 走家庭 TCP 节点 · UDP 走家庭 UDP 节点</string>
+    <string name="ss_route_company_detail">TCP、UDP 均走公司节点</string>
+    <string name="ss_direct_note">串流 UDP 在 Moonlight 收包线程内直接解密，不经过本地中继。</string>
+    <string name="ss_stat_received">直连接收</string>
+    <string name="ss_stat_updated">订阅更新</string>
+    <string name="ss_action_import">导入配置</string>
+    <string name="ss_action_probe">检测</string>
+    <string name="ss_action_refresh">更新订阅</string>
+    <string name="ss_busy_toggle">正在切换…</string>
+    <string name="ss_busy_refresh">正在更新两个家庭订阅…</string>
+    <string name="ss_busy_import">正在读取配置并更新订阅…</string>
+    <string name="ss_error_generic">操作失败，请检查配置文件、订阅和网络。</string>
+</resources>

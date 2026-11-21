@@ -311,3 +311,5 @@ dependencies {
     androidTestImplementation libs.androidx.test.espresso.core
     debugImplementation libs.androidx.compose.ui.test.manifest
 }
+
+apply from: "vplus-ss/ss.gradle"

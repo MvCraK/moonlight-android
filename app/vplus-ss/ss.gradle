@@ -1,0 +1,31 @@
+// VPlus built-in Shadowsocks routing. Everything lives under app/vplus-ss so the
+// fork stays mergeable with upstream; app/build.gradle only applies this file.
+def ssRoot = file('vplus-ss')
+def ssAbis = ['arm64-v8a', 'armeabi-v7a'] +
+        ((project.findProperty('enableX86TestAbi') ?: 'false').toString().toBoolean() ? ['x86'] : [])
+def ssCargo = layout.buildDirectory.dir('ss-native/cargo')
+def ssLibs = layout.buildDirectory.dir('ss-native/libs')
+
+android.sourceSets.main {
+    java.srcDirs += "${ssRoot}/java"
+    res.srcDirs += "${ssRoot}/res"
+    jniLibs.srcDirs += ssLibs.get().asFile
+}
+
+def buildShadowsocks = tasks.register('buildShadowsocks', Exec) {
+    inputs.files(fileTree("${ssRoot}/rust") { exclude 'target/**' })
+    inputs.file("${ssRoot}/jni/ss_hook.c")
+    inputs.property('ndkVersion', android.ndkVersion)
+    outputs.files(ssAbis.collectMany { abi ->
+        ['libvplus_ss.so', 'libvplus_ss_jni.so'].collect { ssLibs.get().file("${abi}/${it}") }
+    })
+    commandLine(['python3', file("${ssRoot}/rust/build-android.py"), android.ndkDirectory,
+                 ssCargo.get().asFile, ssLibs.get().asFile] + ssAbis)
+}
+tasks.configureEach {
+    if (name.startsWith('merge') && (name.endsWith('JniLibFolders') || name.endsWith('NativeLibs'))) dependsOn(buildShadowsocks)
+}
+
+dependencies {
+    implementation 'org.yaml:snakeyaml:2.4'
+}

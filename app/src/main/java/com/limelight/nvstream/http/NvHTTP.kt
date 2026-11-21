@@ -303,6 +303,7 @@ class NvHTTP(
             .sslSocketFactory(sc.socketFactory, trustManager)
             .readTimeout(timeoutConfig.readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
             .connectTimeout(timeoutConfig.connectTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
+            .socketFactory(com.limelight.ss.SsSocketFactory)
             .proxy(Proxy.NO_PROXY)
             .build()
 

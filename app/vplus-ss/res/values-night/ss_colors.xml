@@ -1,0 +1,5 @@
+<resources>
+    <color name="ss_status_online">#3DDC84</color>
+    <color name="ss_status_warning">#FFB74D</color>
+    <color name="ss_status_off">#9AA1AB</color>
+</resources>

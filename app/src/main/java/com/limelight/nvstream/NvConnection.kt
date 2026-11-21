@@ -155,7 +155,7 @@ open class NvConnection(
         val addrs = InetAddress.getAllByName(serverAddress.address)
         for (addr in addrs) {
             try {
-                Socket().use { s ->
+                com.limelight.ss.SsSocketFactory.createSocket().use { s ->
                     s.setSoLinger(true, 0)
                     s.connect(InetSocketAddress(addr, serverAddress.port), 1000)
                     return addr
@@ -370,6 +370,7 @@ open class NvConnection(
             context.negotiatedRemoteStreaming = streamConfig.remote
             context.negotiatedPacketSize = streamConfig.maxPacketSize
         }
+        com.limelight.ss.SsRoutes.tuneStream(context, streamConfig.maxPacketSize) { resolveServerAddress() }
 
         var app = streamConfig.app
 
