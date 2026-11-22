@@ -6,7 +6,8 @@ import android.os.Bundle
 import com.limelight.PcView
 
 /**
- * Single entry point called from LimelightApplication. Restores routing state and
+ * Single entry point called from LimelightApplication. Loads the routing config
+ * (the connection always starts off in a new process) and
  * attaches the toolbar button to PcView through lifecycle callbacks, so upstream
  * activities and layouts need no edits.
  */

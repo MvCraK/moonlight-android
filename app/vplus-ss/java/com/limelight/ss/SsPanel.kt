@@ -6,7 +6,9 @@ import android.net.Uri
 import android.text.format.Formatter
 import androidx.activity.ComponentDialog
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +30,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -40,6 +41,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -58,7 +62,6 @@ import com.limelight.R
 import com.limelight.preferences.handleGamepadConfirm
 import com.limelight.ui.theme.AppShapes
 import com.limelight.utils.AppDialogStyler
-import com.limelight.utils.AppSwitch
 import com.limelight.utils.appAccentColor
 import kotlinx.coroutines.delay
 import java.text.DateFormat
@@ -202,7 +205,7 @@ class SsPanel private constructor(private val activity: Activity) {
                     shadowElevation = 12.dp
                 ) {
                     Column(Modifier.padding(18.dp)) {
-                        // Header: state badge, title + state line, master switch.
+                        // Header: state badge, title + state line, close.
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             StatusBadge(status)
                             Spacer(Modifier.width(12.dp))
@@ -215,11 +218,7 @@ class SsPanel private constructor(private val activity: Activity) {
                                     fontSize = 12.5.sp, fontWeight = FontWeight.Medium
                                 )
                             }
-                            AppSwitch(
-                                checked = enabled,
-                                onCheckedChange = { perform(R.string.ss_busy_toggle) { SsRoutes.toggle() } },
-                                enabled = configured && busy == null
-                            )
+                            CloseButton(input, textPrimary) { dismiss() }
                         }
                         Spacer(Modifier.height(16.dp))
 
@@ -282,26 +281,30 @@ class SsPanel private constructor(private val activity: Activity) {
                                 color = if (busy != null) textSecondary else colorResource(R.color.easytier_warning))
                         }
 
+                        // Prominent connect / disconnect action at the bottom, like master's panel.
                         Spacer(Modifier.height(14.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            val close = { dismiss() }
-                            TextButton(onClick = close, shape = AppShapes.medium,
-                                modifier = Modifier.weight(0.8f).handleGamepadConfirm(close)) {
-                                Text(stringResource(R.string.dialog_button_close), maxLines = 1)
-                            }
-                            if (configured) {
-                                val probe = { SsRoutes.probeAsync(force = true) }
-                                ActionButton(stringResource(R.string.ss_action_import), input, textPrimary, busy == null,
-                                    Modifier.weight(1f), ::pickConfig)
-                                ActionButton(stringResource(R.string.ss_action_probe), input, textPrimary,
-                                    enabled && !snap.probing, Modifier.weight(0.8f), probe)
-                                ActionButton(stringResource(R.string.ss_action_refresh), accent,
-                                    colorResource(R.color.app_dialog_text_primary), busy == null, Modifier.weight(1.1f)) {
+                        val warning = colorResource(R.color.easytier_warning)
+                        val onAccent = colorResource(R.color.app_dialog_text_primary)
+                        when {
+                            !configured -> PrimaryButton(stringResource(R.string.ss_action_import), accent, onAccent,
+                                null, busy == null, ::pickConfig)
+                            enabled -> PrimaryButton(stringResource(R.string.ss_action_disconnect),
+                                warning.copy(alpha = 0.12f), warning, BorderStroke(1.dp, warning.copy(alpha = 0.6f)),
+                                busy == null) { perform(R.string.ss_busy_toggle) { SsRoutes.toggle() } }
+                            else -> PrimaryButton(stringResource(R.string.ss_action_connect), accent, onAccent,
+                                null, busy == null) { perform(R.string.ss_busy_toggle) { SsRoutes.toggle() } }
+                        }
+                        if (configured) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ActionButton(stringResource(R.string.ss_action_import), input, textPrimary,
+                                    busy == null, Modifier.weight(1f), ::pickConfig)
+                                ActionButton(stringResource(R.string.ss_action_refresh), input, textPrimary,
+                                    busy == null, Modifier.weight(1f)) {
                                     perform(R.string.ss_busy_refresh) { SsRoutes.refresh() }
                                 }
-                            } else {
-                                ActionButton(stringResource(R.string.ss_action_import), accent,
-                                    colorResource(R.color.app_dialog_text_primary), busy == null, Modifier.weight(1.4f), ::pickConfig)
+                                ActionButton(stringResource(R.string.ss_action_probe), input, textPrimary,
+                                    enabled && !snap.probing, Modifier.weight(1f)) { SsRoutes.probeAsync(force = true) }
                             }
                         }
                     }
@@ -401,6 +404,41 @@ class SsPanel private constructor(private val activity: Activity) {
             Spacer(Modifier.height(2.dp))
             Text(value, color = textPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+
+    @Composable
+    private fun PrimaryButton(
+        label: String, container: Color, content: Color, border: BorderStroke?, enabled: Boolean, onClick: () -> Unit
+    ) {
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth().height(48.dp).handleGamepadConfirm { if (enabled) onClick() },
+            shape = AppShapes.medium,
+            border = border,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = container, contentColor = content,
+                disabledContainerColor = container.copy(alpha = container.alpha * 0.4f),
+                disabledContentColor = content.copy(alpha = 0.5f)
+            )
+        ) {
+            Text(label, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+
+    @Composable
+    private fun CloseButton(background: Color, tint: Color, onClick: () -> Unit) {
+        Box(
+            Modifier.size(36.dp).clip(CircleShape).background(background)
+                .clickable(onClick = onClick).handleGamepadConfirm(onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(Modifier.size(12.dp)) {
+                val w = 2.dp.toPx()
+                drawLine(tint, Offset.Zero, Offset(size.width, size.height), w, StrokeCap.Round)
+                drawLine(tint, Offset(size.width, 0f), Offset(0f, size.height), w, StrokeCap.Round)
+            }
         }
     }
 

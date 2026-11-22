@@ -27,7 +27,9 @@
     <string name="ss_stat_received">直连接收</string>
     <string name="ss_stat_updated">订阅更新</string>
     <string name="ss_action_import">导入配置</string>
-    <string name="ss_action_probe">检测</string>
+    <string name="ss_action_probe">检测节点</string>
+    <string name="ss_action_connect">开启组网</string>
+    <string name="ss_action_disconnect">断开组网</string>
     <string name="ss_action_refresh">更新订阅</string>
     <string name="ss_busy_toggle">正在切换…</string>
     <string name="ss_busy_refresh">正在更新两个家庭订阅…</string>

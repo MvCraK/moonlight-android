@@ -55,9 +55,10 @@ object SsRoutes {
     @Synchronized fun init(context: Context) {
         storage = AtomicFile(File(context.noBackupFilesDir, "stream-routes.json"))
         if (!storage.baseFile.exists() && !File(storage.baseFile.path + ".bak").exists()) return
+        // Only the config and nodes persist; every new process starts disconnected.
         runCatching {
             state = JSONObject(storage.openRead().use { readText(it) })
-            if (state.optBoolean("enabled")) activate(state)
+            state.remove("enabled")
         }
     }
 
@@ -201,24 +202,19 @@ object SsRoutes {
         val nodes = JSONArray().put(loadSubscription(tcpUrl, false)).put(loadSubscription(udpUrl, true)).put(company)
         synchronized(this) {
             val next = JSONObject().put("nodes", nodes).put("updated", System.currentTimeMillis())
-                .put("enabled", enabled).put("config", JSONObject().put("homeTcp", tcpUrl).put("homeUdp", udpUrl).put("company", company))
+                .put("config", JSONObject().put("homeTcp", tcpUrl).put("homeUdp", udpUrl).put("company", company))
             commit(next)
             if (enabled) activate(next) else notifyChanged()
         }
         probeAsync(force = true)
     }
 
+    /** The connection itself is not persisted: it lasts until toggled off or the process ends. */
     @Synchronized fun toggle() {
-        val next = JSONObject(state.toString()).put("enabled", !enabled)
         if (!enabled) {
-            activate(next)
-            try { commit(next) } catch (e: Exception) {
-                deactivate()
-                throw e
-            }
+            activate(state)
             probeAsync(force = true)
         } else {
-            commit(next)
             deactivate()
         }
     }

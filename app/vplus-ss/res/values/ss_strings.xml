@@ -28,6 +28,8 @@
     <string name="ss_stat_updated">Subscriptions updated</string>
     <string name="ss_action_import">Import</string>
     <string name="ss_action_probe">Test</string>
+    <string name="ss_action_connect">Connect</string>
+    <string name="ss_action_disconnect">Disconnect</string>
     <string name="ss_action_refresh">Update</string>
     <string name="ss_busy_toggle">Switching…</string>
     <string name="ss_busy_refresh">Updating both home subscriptions…</string>
