@@ -62,7 +62,7 @@ public final class VoiceInputExtension {
         screen = new VoiceScreenTouch(input, streamTouch::onTouch, ViewConfiguration.get(activity).getScaledTouchSlop());
         touch = new VoiceButtonTouch(button, prefs, () -> {
             if (input.isRequested() || (host.canSendInput() && host.prepareMicrophone())) {
-                input.tap(SystemClock.uptimeMillis(), ViewConfiguration.getDoubleTapTimeout());
+                input.tap(SystemClock.uptimeMillis());
             }
         }, new VoiceKeyMenu.Host() {
             @Override public void afterVoiceStop(Runnable action) { afterStop(action); }

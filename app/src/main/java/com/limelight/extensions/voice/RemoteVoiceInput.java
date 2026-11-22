@@ -7,6 +7,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** UI-thread state. At most one network operation is in flight for the voice button. */
 final class RemoteVoiceInput {
+    private static final long TAP_DEBOUNCE_MS = 500;
+
     interface Host {
         boolean begin(AtomicBoolean cancelled, Runnable onDisconnect);
         boolean end();
@@ -37,8 +39,8 @@ final class RemoteVoiceInput {
     boolean isBusy() { return phase != Phase.IDLE; }
     boolean isRequested() { return requested; }
 
-    void tap(long nowMs, long doubleTapMs) {
-        boolean repeated = lastTapMs >= 0 && nowMs - lastTapMs <= doubleTapMs;
+    void tap(long nowMs) {
+        boolean repeated = lastTapMs >= 0 && nowMs - lastTapMs <= TAP_DEBOUNCE_MS;
         lastTapMs = nowMs;
         if (repeated || phase == Phase.STOPPING ||
                 (phase == Phase.STARTING && !requested)) return;

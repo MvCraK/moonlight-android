@@ -26,7 +26,7 @@ public class RemoteVoiceInputTest implements RemoteVoiceInput.Host {
     public void show(boolean pending, boolean active) { waiting = pending; speaking = active; }
     public void failed() { errors++; }
     public void disconnected() { disconnects++; }
-    private void tap(long time) { input.tap(time, 300); }
+    private void tap(long time) { input.tap(time); }
     private void drain() {
         while (!worker.isEmpty() || !ui.isEmpty()) {
             if (!worker.isEmpty()) worker.remove().run();
@@ -43,9 +43,17 @@ public class RemoteVoiceInputTest implements RemoteVoiceInput.Host {
         tap(11000); drain();
         assertEquals(2, starts); assertTrue(speaking);
     }
-    @Test public void rapidTapsOnIdleStartOnlyOnce() {
-        tap(0); tap(150); drain(); tap(410); drain();
+    @Test public void tapsMustBeMoreThan500MsApart() {
+        tap(0);
+        tap(150);
+        drain();
+        tap(650);
+        drain();
         assertEquals(1, starts); assertEquals(0, ends); assertTrue(speaking);
+        tap(1151);
+        drain();
+        assertEquals(1, ends);
+        assertFalse(speaking);
     }
     @Test public void stoppingDoesNotQueueRestartEvenIfNetworkIsSlow() {
         tap(0); drain(); tap(1500); tap(2100); drain();
@@ -56,7 +64,7 @@ public class RemoteVoiceInputTest implements RemoteVoiceInput.Host {
         assertEquals(0, starts); assertEquals(0, errors); assertFalse(input.isBusy());
     }
     @Test public void intentionalTapCanCancelPendingStart() {
-        tap(0); worker.remove().run(); tap(500); tap(1100); drain();
+        tap(0); worker.remove().run(); tap(501); tap(1100); drain();
         assertEquals(1, starts); assertEquals(1, ends); assertFalse(input.isRequested());
     }
     @Test public void unexpectedDisconnectClearsGreenAndReleasesMic() {
