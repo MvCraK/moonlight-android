@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2199,
+    "versionCode": 2200,
     "versionName": "26.11.07",
-    "commit": "b9e47d080e87d6e704ea98e418d89ac3aa3acd10",
+    "commit": "538de9ae1353e40594555ef74e411503e1facff9",
     "size": 12361931,
-    "sha256": "c0a4fe9ba0612bd7787b00701f5fcd8f4d75b317ab16d9d3de1bba413388659d",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2199/axixi-2199.apk",
-    "notes": "fix(ss): 程序重启后组网默认关闭，只保留配置和订阅"
+    "sha256": "3f90399ad1879c2597079549088d93453e9914f9912612575b2eb438e245d1f9",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2200/axixi-2200.apk",
+    "notes": "fix(voice): 后台挂起不再阻塞 UI，丢弃输入时补发手势取消；加快长按删除"
   },
   "history": [
+    {
+      "versionCode": 2199,
+      "versionName": "26.11.07",
+      "commit": "b9e47d080e87d6e704ea98e418d89ac3aa3acd10",
+      "size": 12361931,
+      "sha256": "c0a4fe9ba0612bd7787b00701f5fcd8f4d75b317ab16d9d3de1bba413388659d",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2199/axixi-2199.apk",
+      "notes": "fix(ss): 程序重启后组网默认关闭，只保留配置和订阅"
+    },
     {
       "versionCode": 2198,
       "versionName": "26.11.07",
