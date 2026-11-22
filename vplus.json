@@ -1,13 +1,23 @@
 {
   "packageName": "com.mvcrak.moonlight.vplus",
   "latest": {
-    "versionCode": 2767,
+    "versionCode": 2768,
     "versionName": "12.15.31",
-    "commit": "fecdce62ae9bebadda9c670275e594d6e18323c9",
+    "commit": "3f514f41bd40233bd333ac9895d876840abf8af1",
     "size": 30460892,
-    "sha256": "dab219f39b7259e4f2f65ebf803be2085ce291a8250943949e5bd7670f8450db",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2767/vplus-2767.apk",
-    "notes": "Invoke V+ Gradle wrapper through sh on Linux"
+    "sha256": "a02a553b2f5b808d20be43c43ab3328920f6299b6eb1d31be50e8da774ebfbc6",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2768/vplus-2768.apk",
+    "notes": "Merge commit '260387217ced3de987696c377950a0327fb5375a' into vplus"
   },
-  "history": []
+  "history": [
+    {
+      "versionCode": 2767,
+      "versionName": "12.15.31",
+      "commit": "fecdce62ae9bebadda9c670275e594d6e18323c9",
+      "size": 30460892,
+      "sha256": "dab219f39b7259e4f2f65ebf803be2085ce291a8250943949e5bd7670f8450db",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2767/vplus-2767.apk",
+      "notes": "Invoke V+ Gradle wrapper through sh on Linux"
+    }
+  ]
 }
