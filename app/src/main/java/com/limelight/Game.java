@@ -5763,12 +5763,34 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         if (micStatus == 1 && conn != null) {
             restartMicAfterBackground = true;
-            conn.stopMicUplink();
             micStatus = 0;
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
+            stopMicUplinkOffUiThread(conn, "MicBackgroundSuspend");
+            // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
         }
 
         acquireBackgroundStreamWakeLock();
     }
+
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [ADDED] BEGIN
+    /**
+     * stopMicUplink() takes the connection lock, which a voice gesture holds through its
+     * network handshake and Fn acknowledgement (up to several seconds). Never wait on the UI thread.
+     */
+    private void stopMicUplinkOffUiThread(final NvConnection target, String threadName) {
+        micToggleInFlight = true;
+        new Thread(() -> {
+            target.stopMicUplink();
+            runOnUiThread(() -> {
+                micToggleInFlight = false;
+                // A resume that arrived while stopping skipped its restart because of the in-flight flag.
+                if (target == conn && connected && !streamSessionBackgrounded) {
+                    restartMicAfterBackgroundIfNeeded();
+                }
+            });
+        }, threadName).start();
+    }
+    // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [ADDED] END
 
     private void resumeRetainedStreamIfReady() {
         if (!streamSessionBackgrounded || !connected || isFinishing()) {
@@ -5839,9 +5861,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 if (currentConn == conn && connected && !streamSessionBackgrounded) {
                     micStatus = started ? 1 : 0;
                 }
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
                 else if (started) {
-                    currentConn.stopMicUplink();
+                    // Backgrounded again before the restart finished: retry on the next resume.
+                    if (currentConn == conn && connected) restartMicAfterBackground = true;
+                    stopMicUplinkOffUiThread(currentConn, "MicBackgroundResumeAbort");
                 }
+                // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
             });
         }, "MicBackgroundResume").start();
     }

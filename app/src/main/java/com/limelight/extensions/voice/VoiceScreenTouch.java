@@ -16,6 +16,10 @@ final class VoiceScreenTouch {
     private View surface;
     private MotionEvent down;
     private final Runnable longPress = this::forwardDown;
+    private final VoiceGestureBalance balance = new VoiceGestureBalance();
+    private View balanceView;
+    // A reset discarded a held DOWN the handler never saw; drop the rest of that gesture too.
+    private boolean discardUntilDown;
 
     VoiceScreenTouch(RemoteVoiceInput voice, Target target, int slop) {
         this.voice = voice;
@@ -32,6 +36,7 @@ final class VoiceScreenTouch {
         }
         if (action == MotionEvent.ACTION_DOWN) {
             reset();
+            discardUntilDown = false;
             if (voice.isBusy() && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)
                     && event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER) {
                 surface = view;
@@ -40,7 +45,8 @@ final class VoiceScreenTouch {
                 return true;
             }
         }
-        if (down == null) return target.dispatch(view, event);
+        if (discardUntilDown) return true;
+        if (down == null) return deliver(view, event);
         if (action == MotionEvent.ACTION_CANCEL) {
             reset();
             return true;
@@ -56,8 +62,8 @@ final class VoiceScreenTouch {
                 voice.beforeScreenClick(confirmed -> {
                     try {
                         if (confirmed) {
-                            target.dispatch(startView, start);
-                            target.dispatch(view, end);
+                            deliver(startView, start);
+                            deliver(view, end);
                         }
                     } finally { start.recycle(); end.recycle(); }
                 });
@@ -65,14 +71,20 @@ final class VoiceScreenTouch {
             }
         }
         forwardDown();
-        return target.dispatch(view, event);
+        return deliver(view, event);
     }
 
     private void defer(View view, MotionEvent event) {
         MotionEvent copy = MotionEvent.obtain(event);
         voice.beforeScreenClick(confirmed -> {
             try {
-                if (confirmed) target.dispatch(view, copy);
+                if (confirmed) deliver(view, copy);
+                else {
+                    int action = copy.getActionMasked();
+                    if (balance.needsCancel(action)) cancelOpenGesture(copy);
+                    // The handler never sees this DOWN, so the live remainder of its gesture must not reach it either.
+                    else if (action == MotionEvent.ACTION_DOWN) discardUntilDown = true;
+                }
             } finally { copy.recycle(); }
         });
     }
@@ -94,11 +106,29 @@ final class VoiceScreenTouch {
         if (down == null) return;
         View view = surface;
         MotionEvent event = takeDown();
-        try { target.dispatch(view, event); }
+        try { deliver(view, event); }
         finally { event.recycle(); }
     }
 
+    private boolean deliver(View view, MotionEvent event) {
+        balance.delivered(event.getActionMasked());
+        balanceView = balance.isOpen() ? view : null;
+        return target.dispatch(view, event);
+    }
+
+    /** The host did not confirm the stop: drop the input, but release the handler's open gesture. */
+    private void cancelOpenGesture(MotionEvent dropped) {
+        View view = balanceView;
+        MotionEvent cancel = MotionEvent.obtain(dropped);
+        cancel.setAction(MotionEvent.ACTION_CANCEL);
+        try { deliver(view, cancel); }
+        finally { cancel.recycle(); }
+    }
+
     void reset() {
-        if (down != null) takeDown().recycle();
+        if (down != null) {
+            takeDown().recycle();
+            discardUntilDown = true;
+        }
     }
 }

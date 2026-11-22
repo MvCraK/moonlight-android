@@ -30,6 +30,7 @@ final class VoiceKeyMenu {
     private final float density;
     private boolean open, holdingDelete, repeated;
     private int deleteGeneration;
+    static final int DELETE_REPEAT_MS = 70;
     private final Runnable repeat = this::repeatDelete;
 
     VoiceKeyMenu(FrameLayout layer, Host host) {
@@ -134,7 +135,7 @@ final class VoiceKeyMenu {
         host.afterVoiceStop(() -> {
             if (!holdingDelete || generation != deleteGeneration) return;
             host.sendKey(KeyEvent.KEYCODE_DEL, false);
-            keys[2].postDelayed(repeat, 100);
+            keys[2].postDelayed(repeat, DELETE_REPEAT_MS);
         });
     }
 
