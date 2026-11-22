@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2198,
+    "versionCode": 2199,
     "versionName": "26.11.07",
-    "commit": "448fd19a7c8803343609c645a297010ec454e7c0",
+    "commit": "b9e47d080e87d6e704ea98e418d89ac3aa3acd10",
     "size": 12361931,
-    "sha256": "362ba89bdf2f0115a26a671e04fceebb74a8a2972104770fc617e5c531338fd4",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2198/axixi-2198.apk",
-    "notes": "fix(ui): 解决SS背景"
+    "sha256": "c0a4fe9ba0612bd7787b00701f5fcd8f4d75b317ab16d9d3de1bba413388659d",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2199/axixi-2199.apk",
+    "notes": "fix(ss): 程序重启后组网默认关闭，只保留配置和订阅"
   },
   "history": [
+    {
+      "versionCode": 2198,
+      "versionName": "26.11.07",
+      "commit": "448fd19a7c8803343609c645a297010ec454e7c0",
+      "size": 12361931,
+      "sha256": "362ba89bdf2f0115a26a671e04fceebb74a8a2972104770fc617e5c531338fd4",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2198/axixi-2198.apk",
+      "notes": "fix(ui): 解决SS背景"
+    },
     {
       "versionCode": 2197,
       "versionName": "26.11.07",
