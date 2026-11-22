@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.vplus",
   "latest": {
-    "versionCode": 2768,
+    "versionCode": 2769,
     "versionName": "12.15.31",
-    "commit": "3f514f41bd40233bd333ac9895d876840abf8af1",
+    "commit": "1fea472c0f6a0825b526a800da6f41a9e88420c8",
     "size": 30460892,
-    "sha256": "a02a553b2f5b808d20be43c43ab3328920f6299b6eb1d31be50e8da774ebfbc6",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2768/vplus-2768.apk",
-    "notes": "Merge commit '260387217ced3de987696c377950a0327fb5375a' into vplus"
+    "sha256": "60ed139ea1399029d0e505047c013ebbd2bdb2e8b6fc95924331e82e2afadf94",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2769/vplus-2769.apk",
+    "notes": "fix(ss): 程序重启后组网默认关闭；面板改为底部醒目的开关按钮"
   },
   "history": [
+    {
+      "versionCode": 2768,
+      "versionName": "12.15.31",
+      "commit": "3f514f41bd40233bd333ac9895d876840abf8af1",
+      "size": 30460892,
+      "sha256": "a02a553b2f5b808d20be43c43ab3328920f6299b6eb1d31be50e8da774ebfbc6",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2768/vplus-2768.apk",
+      "notes": "Merge commit '260387217ced3de987696c377950a0327fb5375a' into vplus"
+    },
     {
       "versionCode": 2767,
       "versionName": "12.15.31",
