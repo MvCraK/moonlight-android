@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2203,
+    "versionCode": 2204,
     "versionName": "26.11.07",
-    "commit": "63da4c367bb168aa8d4824c1305b91668e440ee1",
-    "size": 12370179,
-    "sha256": "f4770afe48be37ec2abe9acca1de652e70e799bc10ff71cd945b0137e4f09b2f",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2203/axixi-2203.apk",
-    "notes": "Show readable APK labels in personal releases"
+    "commit": "1eac79f0976bbf2ef63a3e799e3de2345c4270cf",
+    "size": 12366027,
+    "sha256": "c7314aea2e8dfab816fef61ff2dc8e142b0ece949946951f86cce18998e88267",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2204/axixi-2204.apk",
+    "notes": "fix(voice): restore shortcut fan and recording ripple"
   },
   "history": [
+    {
+      "versionCode": 2203,
+      "versionName": "26.11.07",
+      "commit": "63da4c367bb168aa8d4824c1305b91668e440ee1",
+      "size": 12370179,
+      "sha256": "f4770afe48be37ec2abe9acca1de652e70e799bc10ff71cd945b0137e4f09b2f",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2203/axixi-2203.apk",
+      "notes": "Show readable APK labels in personal releases"
+    },
     {
       "versionCode": 2202,
       "versionName": "26.11.07",
