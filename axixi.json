@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2200,
+    "versionCode": 2202,
     "versionName": "26.11.07",
-    "commit": "538de9ae1353e40594555ef74e411503e1facff9",
-    "size": 12361931,
-    "sha256": "3f90399ad1879c2597079549088d93453e9914f9912612575b2eb438e245d1f9",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2200/axixi-2200.apk",
-    "notes": "fix(voice): 后台挂起不再阻塞 UI，丢弃输入时补发手势取消；加快长按删除"
+    "commit": "c1d113e567ad5e9a65844bd1b72cc7133d350213",
+    "size": 12370179,
+    "sha256": "1647f8d17264ba11b0cb4a366e114495e588644f249890f75ff5a4ea65cdbcf4",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2202/axixi-2202.apk",
+    "notes": "refactor(Game): clean up import statements and update submodule reference"
   },
   "history": [
+    {
+      "versionCode": 2200,
+      "versionName": "26.11.07",
+      "commit": "538de9ae1353e40594555ef74e411503e1facff9",
+      "size": 12361931,
+      "sha256": "3f90399ad1879c2597079549088d93453e9914f9912612575b2eb438e245d1f9",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2200/axixi-2200.apk",
+      "notes": "fix(voice): 后台挂起不再阻塞 UI，丢弃输入时补发手势取消；加快长按删除"
+    },
     {
       "versionCode": 2199,
       "versionName": "26.11.07",
