@@ -27,6 +27,10 @@ public final class VoiceInputExtension {
         boolean canSendInput();
         boolean prepareMicrophone();
         byte modifiers();
+        // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED] BEGIN
+        void toggleRightClick();
+        boolean isRightClickArmed();
+        // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED] END
     }
 
     private View button;
@@ -69,6 +73,10 @@ public final class VoiceInputExtension {
             @Override public void sendKey(int code, boolean withShift) {
                 if (host.canSendInput()) sendShortcut(stream, keyboard, code, withShift, host.modifiers());
             }
+            // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED] BEGIN
+            @Override public void toggleRightClick() { host.toggleRightClick(); }
+            @Override public boolean isRightClickArmed() { return host.isRightClickArmed(); }
+            // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED] END
         });
     }
 

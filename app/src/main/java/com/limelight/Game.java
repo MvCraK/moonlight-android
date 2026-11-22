@@ -156,6 +156,8 @@ import java.util.Locale;
 import java.util.Map;
 // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
 import com.limelight.extensions.voice.VoiceInputExtension;
+// EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED]
+import com.limelight.extensions.rightclick.TouchRightClickExtension;
 // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
 
 
@@ -337,6 +339,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private boolean micToggleInFlight;
     // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
     private final VoiceInputExtension voice = new VoiceInputExtension();
+    // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED]
+    private final TouchRightClickExtension rightClick = new TouchRightClickExtension();
     // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
     private boolean pendingMicToggleAfterPermission;
 
@@ -1103,6 +1107,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         initVoiceInput();
 
         // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
+        // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED]
+        initTouchRightClick();
         //悬浮球
         if(prefConfig.enableAXFloating){
             initFloatingView();
@@ -2314,6 +2320,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
         voice.reset();
         // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
+        // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED]
+        rightClick.reset();
         cancelStylusInput();
         activityResumed = false;
         cancelDsTouchpadDrag();
@@ -3766,6 +3774,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 if(disableMouseModel){
                     return true;
                 }
+                // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED]
+                if (rightClick.onFingerEvent(view, event)) return true;
 
                 // If this is the parent view, we'll offset our coordinates to appear as if they
                 // are relative to the StreamView like our StreamView touch events are.
@@ -3818,11 +3828,18 @@ public class Game extends Activity implements SurfaceHolder.Callback,
                 // TODO: Re-enable native touch when have a better solution for handling
                 // cancelled touches from Android gestures and 3 finger taps to activate the software keyboard.
                 if(prefConfig.enableMultiTouchScreen){
+                    // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [MODIFIED] BEGIN
+                    if (!prefConfig.touchscreenTrackpad && rightClick.onNativeTouch(view, event)) {
+                        return true;
+                    }
+                    // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [MODIFIED] END
                     if (!prefConfig.touchscreenTrackpad && trySendTouchEvent(view, event)) {
                         // If this host supports touch events and absolute touch is enabled,
                         // send it directly as a touch event.
                         return true;
                     }
+                    // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED]
+                    rightClick.nativeTouchUnavailable();
                 }
 
                 int actionIndex = event.getActionIndex();
@@ -6941,8 +6958,35 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
             @Override public boolean prepareMicrophone() { return canStartVoiceInput(); }
             @Override public byte modifiers() { return getModifierState(); }
+            // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED]
+            @Override public void toggleRightClick() { rightClick.toggleArmed(); }
+            @Override public boolean isRightClickArmed() { return rightClick.isArmed(); }
         });
     }
+
+    // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED] BEGIN
+    private void initTouchRightClick() {
+        rightClick.attach(this, new TouchRightClickExtension.Host() {
+            @Override public float[] normalize(View view, MotionEvent event, int pointerIndex) {
+                return getStreamViewRelativeNormalizedXY(view, event, pointerIndex, true);
+            }
+            @Override public void cancelNativeTouch() {
+                if (conn != null) conn.sendTouchEvent(MoonBridge.LI_TOUCH_EVENT_CANCEL_ALL, 0,
+                        0, 0, 0, 0, 0, MoonBridge.LI_ROT_UNKNOWN);
+            }
+            @Override public void rightClick(float normalizedX, float normalizedY) {
+                if (conn == null || streamView.getWidth() <= 0 || streamView.getHeight() <= 0) return;
+                int width = Math.min(Short.MAX_VALUE, streamView.getWidth());
+                int height = Math.min(Short.MAX_VALUE, streamView.getHeight());
+                short x = (short) Math.max(0, Math.min(width - 1, Math.round(normalizedX * (width - 1))));
+                short y = (short) Math.max(0, Math.min(height - 1, Math.round(normalizedY * (height - 1))));
+                voice.sendMousePosition(conn, x, y, (short) width, (short) height);
+                voice.sendMouseButton(conn, MouseButtonPacket.BUTTON_RIGHT, true);
+                voice.sendMouseButton(conn, MouseButtonPacket.BUTTON_RIGHT, false);
+            }
+        });
+    }
+    // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED] END
 
     private boolean canStartVoiceInput() {
         if (micToggleInFlight) {

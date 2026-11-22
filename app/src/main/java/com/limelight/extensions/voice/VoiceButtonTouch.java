@@ -1,6 +1,7 @@
 // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [ADDED]
 package com.limelight.extensions.voice;
 
+import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.SharedPreferences;
 import android.graphics.Rect;
@@ -28,12 +29,21 @@ final class VoiceButtonTouch implements View.OnTouchListener {
     private float downX, downY, originX, originY, heightRatio;
     private boolean dragging, right, held, reopen, waiting;
     private final Runnable hold = this::onHold;
+    private ValueAnimator breathing;
 
     VoiceButtonTouch(View view, SharedPreferences prefs, Runnable click, VoiceKeyMenu.Host keys) {
         this.view = view;
         this.prefs = prefs;
         layer = (FrameLayout)view.getParent();
-        menu = new VoiceKeyMenu(layer, keys);
+        menu = new VoiceKeyMenu(layer, new VoiceKeyMenu.Host() {
+            @Override public void afterVoiceStop(Runnable action) { keys.afterVoiceStop(action); }
+            @Override public void sendKey(int code, boolean withShift) { keys.sendKey(code, withShift); }
+            // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED] BEGIN
+            // The open menu makes its layer clickable, which would swallow the aiming tap.
+            @Override public void toggleRightClick() { keys.toggleRightClick(); setOpen(false); }
+            @Override public boolean isRightClickArmed() { return keys.isRightClickArmed(); }
+            // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED] END
+        });
         slop = ViewConfiguration.get(view.getContext()).getScaledTouchSlop();
         float density = view.getResources().getDisplayMetrics().density;
         horizontalMargin = Math.round(8 * density);
@@ -65,8 +75,30 @@ final class VoiceButtonTouch implements View.OnTouchListener {
 
     void show(boolean pending, boolean speaking) {
         waiting = pending;
+        if (view.isActivated() != speaking) breathe(speaking);
         view.setActivated(speaking);
         updateDescription();
+    }
+
+    /** A slow pulse while the Mac is listening, so the state reads at a glance. */
+    private void breathe(boolean on) {
+        if (breathing != null) {
+            breathing.cancel();
+            breathing = null;
+        }
+        view.setScaleX(1f);
+        view.setScaleY(1f);
+        if (!on) return;
+        breathing = ValueAnimator.ofFloat(1f, 1.1f);
+        breathing.setDuration(900);
+        breathing.setRepeatCount(ValueAnimator.INFINITE);
+        breathing.setRepeatMode(ValueAnimator.REVERSE);
+        breathing.addUpdateListener(a -> {
+            float scale = (float) a.getAnimatedValue();
+            view.setScaleX(scale);
+            view.setScaleY(scale);
+        });
+        breathing.start();
     }
 
     private void updateDescription() {
