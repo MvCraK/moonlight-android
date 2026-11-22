@@ -8,8 +8,9 @@ import android.os.Bundle;
 import com.limelight.PcView;
 
 /**
- * Registered as the application class in AndroidManifest.xml so SS state is
- * restored for every entry point (launcher, shortcuts, stream resume). Attaches
+ * Registered as the application class in AndroidManifest.xml so the SS config is
+ * loaded for every entry point (launcher, shortcuts, stream resume); the
+ * connection itself always starts off in a new process. Attaches
  * the home toolbar button through lifecycle callbacks, keeping PcView untouched.
  */
 public class SsApplication extends Application {

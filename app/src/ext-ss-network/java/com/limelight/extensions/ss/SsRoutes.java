@@ -111,10 +111,11 @@ public final class SsRoutes {
             return;
         }
         try (InputStream in = storage.openRead()) {
+            // Only the config and nodes persist; every new process starts disconnected.
             state = new JSONObject(readText(in));
-            if (state.optBoolean("enabled")) activate(state);
+            state.remove("enabled");
         } catch (Throwable ignored) {
-            // A corrupt state or a missing native library simply starts disabled.
+            // A corrupt state simply starts unconfigured.
         }
     }
 
@@ -339,7 +340,6 @@ public final class SsRoutes {
                 .put(loadSubscription(udpUrl, true)).put(company);
         synchronized (SsRoutes.class) {
             JSONObject next = new JSONObject().put("nodes", nodes).put("updated", System.currentTimeMillis())
-                    .put("enabled", enabled)
                     .put("config", new JSONObject().put("homeTcp", tcpUrl).put("homeUdp", udpUrl).put("company", company));
             commit(next);
             if (enabled) activate(next);
@@ -348,19 +348,12 @@ public final class SsRoutes {
         probeAsync(true);
     }
 
+    /** The connection itself is not persisted: it lasts until toggled off or the process ends. */
     static synchronized void toggle() throws Exception {
-        JSONObject next = new JSONObject(state.toString()).put("enabled", !enabled);
         if (!enabled) {
-            activate(next);
-            try {
-                commit(next);
-            } catch (IOException e) {
-                deactivate();
-                throw e;
-            }
+            activate(state);
             probeAsync(true);
         } else {
-            commit(next);
             deactivate();
         }
     }
