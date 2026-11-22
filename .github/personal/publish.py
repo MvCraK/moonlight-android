@@ -16,6 +16,7 @@ def run(*args, cwd=None):
 
 channel = os.environ["CHANNEL"]
 branch = {"axixi": "master", "vplus": "vplus"}[channel]
+channel_name = {"axixi": "Axixi", "vplus": "VPlus"}[channel]
 package = f"com.mvcrak.moonlight.{channel}"
 repo = os.environ["GITHUB_REPOSITORY"]
 commit = os.environ["GITHUB_SHA"]
@@ -50,7 +51,7 @@ def verify(path):
 def publish():
     if os.environ["GITHUB_REF_NAME"] != branch or repo != "MvCraK/moonlight-android":
         raise ValueError("Channel/ref mismatch")
-    verify(apk)
+    local_version = verify(apk)
     # A tag is immutable. A retry may resume after the release or asset was created.
     refs = run("git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}")
     if refs and refs.split()[0] != commit:
@@ -64,7 +65,8 @@ def publish():
     if not any(asset["name"] == apk.name for asset in release["assets"]):
         if not release["isDraft"]:
             raise ValueError("Published release is missing its APK")
-        run("gh", "release", "upload", tag, apk)
+        label = f"Moonlight-{channel_name}-v{local_version}-b{code}.apk"
+        run("gh", "release", "upload", tag, f"{apk}#{label}")
     # Read back the actual hosted bytes, including on retries.
     with tempfile.TemporaryDirectory() as tmp:
         run("gh", "release", "download", tag, "--dir", tmp, "--pattern", apk.name)
