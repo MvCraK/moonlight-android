@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2205,
+    "versionCode": 2206,
     "versionName": "26.11.07",
-    "commit": "f1f8d2b2e16c788c3a2ff00ed2e86980674882ce",
+    "commit": "f96b1abb349c13f1c26ed9650d678a767347f921",
     "size": 12366027,
-    "sha256": "d2e4eebd8c56450a3163b76bae5a7eff38084c3f22ef874c83c6a328c78e0dfc",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2205/axixi-2205.apk",
-    "notes": "fix(voice): debounce microphone taps for 500 ms"
+    "sha256": "8f3f119bda4bc099bd1c1d5698c0560f86ba534eddf91a526dad46328830e2e1",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2206/axixi-2206.apk",
+    "notes": "ci(sync): report upstream conflicts instead of pushing topic branch"
   },
   "history": [
+    {
+      "versionCode": 2205,
+      "versionName": "26.11.07",
+      "commit": "f1f8d2b2e16c788c3a2ff00ed2e86980674882ce",
+      "size": 12366027,
+      "sha256": "d2e4eebd8c56450a3163b76bae5a7eff38084c3f22ef874c83c6a328c78e0dfc",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2205/axixi-2205.apk",
+      "notes": "fix(voice): debounce microphone taps for 500 ms"
+    },
     {
       "versionCode": 2204,
       "versionName": "26.11.07",
