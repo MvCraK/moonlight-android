@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2202,
+    "versionCode": 2203,
     "versionName": "26.11.07",
-    "commit": "c1d113e567ad5e9a65844bd1b72cc7133d350213",
+    "commit": "63da4c367bb168aa8d4824c1305b91668e440ee1",
     "size": 12370179,
-    "sha256": "1647f8d17264ba11b0cb4a366e114495e588644f249890f75ff5a4ea65cdbcf4",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2202/axixi-2202.apk",
-    "notes": "refactor(Game): clean up import statements and update submodule reference"
+    "sha256": "f4770afe48be37ec2abe9acca1de652e70e799bc10ff71cd945b0137e4f09b2f",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2203/axixi-2203.apk",
+    "notes": "Show readable APK labels in personal releases"
   },
   "history": [
+    {
+      "versionCode": 2202,
+      "versionName": "26.11.07",
+      "commit": "c1d113e567ad5e9a65844bd1b72cc7133d350213",
+      "size": 12370179,
+      "sha256": "1647f8d17264ba11b0cb4a366e114495e588644f249890f75ff5a4ea65cdbcf4",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2202/axixi-2202.apk",
+      "notes": "refactor(Game): clean up import statements and update submodule reference"
+    },
     {
       "versionCode": 2200,
       "versionName": "26.11.07",
