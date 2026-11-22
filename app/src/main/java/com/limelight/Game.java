@@ -6958,9 +6958,6 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }
             @Override public boolean prepareMicrophone() { return canStartVoiceInput(); }
             @Override public byte modifiers() { return getModifierState(); }
-            // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED]
-            @Override public void toggleRightClick() { rightClick.toggleArmed(); }
-            @Override public boolean isRightClickArmed() { return rightClick.isArmed(); }
         });
     }
 

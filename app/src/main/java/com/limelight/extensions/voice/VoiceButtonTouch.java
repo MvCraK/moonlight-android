@@ -5,6 +5,7 @@ import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.SharedPreferences;
 import android.graphics.Rect;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.view.DisplayCutout;
 import android.view.HapticFeedbackConstants;
@@ -12,6 +13,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.WindowInsets;
+import android.view.animation.LinearInterpolator;
 import android.widget.FrameLayout;
 
 /** Shares the microphone's hit target between a tap, a stationary hold and an edge-snapping drag. */
@@ -19,6 +21,8 @@ final class VoiceButtonTouch implements View.OnTouchListener {
     static final int HOLD_MS = 420;
     private final View view;
     private final FrameLayout layer;
+    private final View recordingRing;
+    private final ValueAnimator recordingRipple = ValueAnimator.ofFloat(0f, 1f);
     private final VoiceKeyMenu menu;
     private final SharedPreferences prefs;
     private final int slop, horizontalMargin, verticalMargin;
@@ -29,23 +33,36 @@ final class VoiceButtonTouch implements View.OnTouchListener {
     private float downX, downY, originX, originY, heightRatio;
     private boolean dragging, right, held, reopen, waiting;
     private final Runnable hold = this::onHold;
-    private ValueAnimator breathing;
 
     VoiceButtonTouch(View view, SharedPreferences prefs, Runnable click, VoiceKeyMenu.Host keys) {
         this.view = view;
         this.prefs = prefs;
         layer = (FrameLayout)view.getParent();
-        menu = new VoiceKeyMenu(layer, new VoiceKeyMenu.Host() {
-            @Override public void afterVoiceStop(Runnable action) { keys.afterVoiceStop(action); }
-            @Override public void sendKey(int code, boolean withShift) { keys.sendKey(code, withShift); }
-            // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED] BEGIN
-            // The open menu makes its layer clickable, which would swallow the aiming tap.
-            @Override public void toggleRightClick() { keys.toggleRightClick(); setOpen(false); }
-            @Override public boolean isRightClickArmed() { return keys.isRightClickArmed(); }
-            // EXTENSION DEVELOPMENT [EXT-TOUCH-RIGHT-CLICK] [ADDED] END
-        });
+        menu = new VoiceKeyMenu(layer, keys);
         slop = ViewConfiguration.get(view.getContext()).getScaledTouchSlop();
         float density = view.getResources().getDisplayMetrics().density;
+        recordingRing = new View(view.getContext());
+        GradientDrawable ring = new GradientDrawable();
+        ring.setShape(GradientDrawable.OVAL);
+        ring.setStroke(Math.max(1, Math.round(2 * density)), 0xFFC8463F);
+        recordingRing.setBackground(ring);
+        recordingRing.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        recordingRing.setVisibility(View.INVISIBLE);
+        layer.addView(recordingRing, layer.indexOfChild(view),
+                new FrameLayout.LayoutParams((FrameLayout.LayoutParams) view.getLayoutParams()));
+
+        recordingRipple.setDuration(1300);
+        recordingRipple.setRepeatCount(ValueAnimator.INFINITE);
+        recordingRipple.setInterpolator(new LinearInterpolator());
+        recordingRipple.addUpdateListener(animation -> {
+            float progress = animation.getAnimatedFraction();
+            float scale = 1.04f + 0.66f * progress;
+            float remaining = 1f - progress;
+            recordingRing.setScaleX(scale);
+            recordingRing.setScaleY(scale);
+            recordingRing.setAlpha(0.56f * remaining * remaining);
+        });
+
         horizontalMargin = Math.round(8 * density);
         verticalMargin = Math.round(4 * density);
         right = prefs.getBoolean("voice_button_right", true);
@@ -75,30 +92,28 @@ final class VoiceButtonTouch implements View.OnTouchListener {
 
     void show(boolean pending, boolean speaking) {
         waiting = pending;
-        if (view.isActivated() != speaking) breathe(speaking);
         view.setActivated(speaking);
+        updateRecordingRipple();
         updateDescription();
     }
 
-    /** A slow pulse while the Mac is listening, so the state reads at a glance. */
-    private void breathe(boolean on) {
-        if (breathing != null) {
-            breathing.cancel();
-            breathing = null;
+    private void updateRecordingRipple() {
+        boolean visible = view.isActivated() && view.isShown();
+        if (visible == recordingRipple.isStarted()) return;
+        if (visible) {
+            recordingRing.setVisibility(View.VISIBLE);
+            recordingRipple.start();
+        } else {
+            recordingRipple.cancel();
+            recordingRing.setVisibility(View.INVISIBLE);
         }
-        view.setScaleX(1f);
-        view.setScaleY(1f);
-        if (!on) return;
-        breathing = ValueAnimator.ofFloat(1f, 1.1f);
-        breathing.setDuration(900);
-        breathing.setRepeatCount(ValueAnimator.INFINITE);
-        breathing.setRepeatMode(ValueAnimator.REVERSE);
-        breathing.addUpdateListener(a -> {
-            float scale = (float) a.getAnimatedValue();
-            view.setScaleX(scale);
-            view.setScaleY(scale);
-        });
-        breathing.start();
+    }
+
+    private void positionButton(float x, float y) {
+        view.setX(x);
+        view.setY(y);
+        recordingRing.setX(x);
+        recordingRing.setY(y);
     }
 
     private void updateDescription() {
@@ -157,12 +172,13 @@ final class VoiceButtonTouch implements View.OnTouchListener {
         if (safe.width()<view.getWidth() || safe.height()<view.getHeight()) {
             setOpen(false);
             view.setVisibility(View.INVISIBLE);
+            updateRecordingRipple();
             return;
         }
         view.setVisibility(View.VISIBLE);
-        view.setX(right ? safe.right-view.getWidth() : safe.left);
         int top = safe.top+Math.round((safe.height()-view.getHeight())*heightRatio);
-        view.setY(top);
+        positionButton(right ? safe.right-view.getWidth() : safe.left, top);
+        updateRecordingRipple();
         if (menu.isOpen() && !menu.position(safe, view.getWidth(), top, right)) setOpen(false);
     }
 
@@ -194,8 +210,8 @@ final class VoiceButtonTouch implements View.OnTouchListener {
             dragging = true;
         }
         updateBounds();
-        view.setX(Math.max(safe.left,Math.min(safe.right-view.getWidth(),originX+dx)));
-        view.setY(Math.max(safe.top,Math.min(safe.bottom-view.getHeight(),originY+dy)));
+        positionButton(Math.max(safe.left,Math.min(safe.right-view.getWidth(),originX+dx)),
+                Math.max(safe.top,Math.min(safe.bottom-view.getHeight(),originY+dy)));
     }
 
     private void finish(boolean commit) {
