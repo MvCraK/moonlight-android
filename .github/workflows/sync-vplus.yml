@@ -38,11 +38,27 @@ jobs:
           source=$(git rev-parse FETCH_HEAD)
           if git merge-base --is-ancestor "$source" HEAD; then exit 0; fi
           if ! git merge --no-ff --no-edit "$source"; then
+            conflicts=$(git diff --name-only --diff-filter=U)
             git merge --abort
-            topic="sync/$BRANCH/$source"
-            git push origin "$source:refs/heads/$topic"
-            echo "Upstream changes conflict with $BRANCH. Resolve them in a PR:" >> "$GITHUB_STEP_SUMMARY"
-            echo "https://github.com/$GITHUB_REPOSITORY/compare/$BRANCH...$topic?expand=1" >> "$GITHUB_STEP_SUMMARY"
+            # Upstream commits may carry workflow files that differ from ours, and
+            # GITHUB_TOKEN cannot push those, so report the conflict instead of
+            # pushing a topic branch.
+            {
+              echo "### Upstream changes conflict with \`$BRANCH\`"
+              echo "Upstream: https://github.com/$UPSTREAM/commit/$source"
+              echo
+              echo "Conflicted files:"
+              echo '```'
+              echo "$conflicts"
+              echo '```'
+              echo "Resolve locally:"
+              echo '```bash'
+              echo "git checkout $BRANCH && git pull"
+              echo "git fetch --no-tags https://github.com/$UPSTREAM.git $source"
+              echo "git merge --no-ff --no-edit $source"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Upstream $UPSTREAM@$source conflicts with $BRANCH in: $(echo $conflicts)"
             exit 1
           fi
           git push origin "HEAD:refs/heads/$BRANCH"
