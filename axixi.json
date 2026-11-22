@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2204,
+    "versionCode": 2205,
     "versionName": "26.11.07",
-    "commit": "1eac79f0976bbf2ef63a3e799e3de2345c4270cf",
+    "commit": "f1f8d2b2e16c788c3a2ff00ed2e86980674882ce",
     "size": 12366027,
-    "sha256": "c7314aea2e8dfab816fef61ff2dc8e142b0ece949946951f86cce18998e88267",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2204/axixi-2204.apk",
-    "notes": "fix(voice): restore shortcut fan and recording ripple"
+    "sha256": "d2e4eebd8c56450a3163b76bae5a7eff38084c3f22ef874c83c6a328c78e0dfc",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2205/axixi-2205.apk",
+    "notes": "fix(voice): debounce microphone taps for 500 ms"
   },
   "history": [
+    {
+      "versionCode": 2204,
+      "versionName": "26.11.07",
+      "commit": "1eac79f0976bbf2ef63a3e799e3de2345c4270cf",
+      "size": 12366027,
+      "sha256": "c7314aea2e8dfab816fef61ff2dc8e142b0ece949946951f86cce18998e88267",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2204/axixi-2204.apk",
+      "notes": "fix(voice): restore shortcut fan and recording ripple"
+    },
     {
       "versionCode": 2203,
       "versionName": "26.11.07",
