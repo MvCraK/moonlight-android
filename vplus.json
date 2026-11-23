@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.vplus",
   "latest": {
-    "versionCode": 2773,
+    "versionCode": 2774,
     "versionName": "12.15.33",
-    "commit": "a0f4373dbcf9b3a865ba876dfb53622b1e2d76a1",
+    "commit": "a353cb4731a5e524b3f04d51cd188ed03a25a3ba",
     "size": 30469084,
-    "sha256": "8143f2bf5821e00fca60b255733735ef3eda16f40833ce87f8f607fefad8a909",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2773/vplus-2773.apk",
-    "notes": "Merge commit '052a6777e72b60f297b14422edb781e496ce7e9a' into vplus"
+    "sha256": "a5faebfc0864b1dfee2d104745f87321b9244f21e26fc5e6421ea29b39653f42",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2774/vplus-2774.apk",
+    "notes": "Merge commit 'd784cdc39e3496b94956023dede776c8ffe9ddee' into vplus"
   },
   "history": [
+    {
+      "versionCode": 2773,
+      "versionName": "12.15.33",
+      "commit": "a0f4373dbcf9b3a865ba876dfb53622b1e2d76a1",
+      "size": 30469084,
+      "sha256": "8143f2bf5821e00fca60b255733735ef3eda16f40833ce87f8f607fefad8a909",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2773/vplus-2773.apk",
+      "notes": "Merge commit '052a6777e72b60f297b14422edb781e496ce7e9a' into vplus"
+    },
     {
       "versionCode": 2771,
       "versionName": "12.15.31",
