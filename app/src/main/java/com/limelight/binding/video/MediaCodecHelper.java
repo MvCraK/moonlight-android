@@ -794,8 +794,9 @@ public class MediaCodecHelper {
 
     /**
      * Queries the codec's advertised vendor parameters (Android 12+ / API 31+) before configure()
-     * and applies ONLY vendor low-latency / SW-fence keys that this specific SoC explicitly supports.
-     * Safe across older Qualcomm, newer Qualcomm (SD8 Gen 2/3/Elite+), and non-Qualcomm chips.
+     * and applies only safe low-latency vendor flags that don't inflate output delay or emit
+     * duplicate C2Work callbacks (e.g. avoids QTI SW-fence / picture-order on FEATURE_LowLatency
+     * decoders where Android 16 CCodecBufferChannel drops extra fence works as "flushed work").
      */
     public static void applySupportedVendorLowLatencyOptions(MediaCodec decoder,
                                                              MediaFormat format,
@@ -815,11 +816,7 @@ public class MediaCodecHelper {
                 return;
             }
             for (String param : supported) {
-                if ("vendor.qti-ext-dec-low-latency.enable".equalsIgnoreCase(param) ||
-                        "vendor.qti-ext-dec-picture-order.enable".equalsIgnoreCase(param) ||
-                        "vendor.qti-ext-output-sw-fence-enable.value".equalsIgnoreCase(param) ||
-                        "vendor.qti-ext-output-fence.enable".equalsIgnoreCase(param) ||
-                        "vendor.qti-ext-output-fence.fence_type".equalsIgnoreCase(param)) {
+                if ("vendor.qti-ext-dec-low-latency.enable".equalsIgnoreCase(param)) {
                     safeSet(format, param, 1);
                     LimeLog.info("Applied supported QTI vendor param: " + param + "=1");
                 }
