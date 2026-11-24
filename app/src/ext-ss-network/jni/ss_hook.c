@@ -179,7 +179,7 @@ extern ssize_t __recvfrom_chk(int, void *, size_t, size_t, int, struct sockaddr 
 static ssize_t send_direct(int fd, struct flow *f, const struct sockaddr_in *peer,
                            const void *plain, size_t n, int flags, const struct msghdr *ctl) {
     unsigned char stack[SEND_STACK];
-    size_t cap = n + f->overhead;
+    size_t cap = (n == 0 ? 900 : n) + f->overhead;
     unsigned char *out = cap <= sizeof(stack) ? stack : malloc(cap);
     if (!out) { errno = ENOMEM; return -1; }
     intptr_t len = vss_udp_encrypt(f->node, ntohl(peer->sin_addr.s_addr), ntohs(peer->sin_port),
@@ -500,7 +500,7 @@ JNIEXPORT void JNICALL Java_com_limelight_extensions_ss_SsNative_udpRelease(JNIE
 JNIEXPORT jbyteArray JNICALL Java_com_limelight_extensions_ss_SsNative_udpEncrypt(
         JNIEnv *env, jclass cls, jlong node, jint ip, jint port, jbyteArray data, jint off, jint len) {
     const void *n = (const void *)(intptr_t)node;
-    size_t cap = (size_t)len + vss_udp_overhead(n);
+    size_t cap = (len == 0 ? 900 : (size_t)len) + vss_udp_overhead(n);
     unsigned char *buf = malloc(cap + (size_t)len);
     if (!buf) return NULL;
     unsigned char *plain = buf + cap;

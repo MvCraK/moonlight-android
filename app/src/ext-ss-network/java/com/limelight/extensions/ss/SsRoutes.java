@@ -86,7 +86,14 @@ public final class SsRoutes {
     /** Node order is home TCP, home UDP, company; the home UDP node only serves UDP. */
     private static final int UDP_ONLY_NODE = 1;
     private static final Set<String> CIPHERS =
-            new HashSet<>(Arrays.asList("aes-256-gcm", "aes-128-gcm", "chacha20-ietf-poly1305"));
+            new HashSet<>(Arrays.asList(
+                    "aes-256-gcm",
+                    "aes-128-gcm",
+                    "chacha20-ietf-poly1305",
+                    "2022-blake3-aes-128-gcm",
+                    "2022-blake3-aes-256-gcm",
+                    "2022-blake3-chacha20-poly1305"
+            ));
 
     /** Serializes subscription/config work triggered from the UI. */
     static final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -380,8 +387,8 @@ public final class SsRoutes {
         }
         if (!routed(resolved)) return;
         context.negotiatedRemoteStreaming = StreamConfiguration.STREAM_CFG_REMOTE;
-        // 1168 B payload + 28 B RTP/NV + 55 B SS aes-256-gcm + 28 B IP/UDP = 1279 B (< 1280 B MTU floor)
-        context.negotiatedPacketSize = Math.min(maxPacketSize, 1168);
+        // 1160 B payload + 28 B RTP/NV + 58 B SS 2022 S->C + 28 B IP/UDP = 1274 B (< 1280 B MTU floor)
+        context.negotiatedPacketSize = Math.min(maxPacketSize, 1160);
     }
 
     public static boolean routed(InetAddress addr) {
