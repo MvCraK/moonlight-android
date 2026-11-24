@@ -544,6 +544,12 @@ fn forward_tcp(ip: u32, port: u16, source: u16) -> Option<u16> {
             .worker_threads(1)
             .enable_all()
             .thread_name("moonlight-ss")
+            .on_thread_start(|| {
+                #[cfg(target_os = "android")]
+                unsafe {
+                    libc::setpriority(libc::PRIO_PROCESS, 0, -8);
+                }
+            })
             .build()
             .unwrap()
     });

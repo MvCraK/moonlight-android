@@ -580,6 +580,48 @@ public class MediaCodecHelper {
         // the first MediaFormat that doesn't fail in configure().
 
         boolean setNewOption = false;
+        boolean supportsAndroidRLowLatency =
+                decoderSupportsAndroidRLowLatency(decoderInfo, videoFormat.getString(MediaFormat.KEY_MIME));
+
+        // Modern Android 11+ decoders advertising FEATURE_LowLatency (Snapdragon, Dimensity, Exynos,
+        // Tensor, etc.): always request standard realtime priority (KEY_PRIORITY=0) and, on safe
+        // Qualcomm codecs, max operating rate so the decoder doesn't run at background priority (1)
+        // or default 30 fps clock hint. Automatically falls back to progressively safer subsets if
+        // configure() rejects any option on an older, newer, or non-Qualcomm chip.
+        if (!enableXringO1Optimization && supportsAndroidRLowLatency &&
+                !(lowLatencyExperiment && isDecoderInList(mtkDecoderPrefixes, decoderInfo.getName()))) {
+            if (tryNumber == 0) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    videoFormat.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+                }
+                videoFormat.setInteger("low-latency", 1);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
+                    if (MediaCodecHelper.decoderSupportsMaxOperatingRate(decoderInfo.getName())) {
+                        videoFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, Short.MAX_VALUE);
+                    }
+                }
+                return true;
+            }
+            else if (tryNumber == 1) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    videoFormat.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+                }
+                videoFormat.setInteger("low-latency", 1);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
+                }
+                return true;
+            }
+            else if (tryNumber == 2) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    videoFormat.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+                }
+                videoFormat.setInteger("low-latency", 1);
+                return true;
+            }
+            return false;
+        }
 
         if (tryNumber < 1) {
             // Official Android 11+ low latency option (KEY_LOW_LATENCY).
@@ -591,7 +633,7 @@ public class MediaCodecHelper {
 
             // If this decoder officially supports FEATURE_LowLatency, we will just use that alone
             // for try 0. Otherwise, we'll include it as best effort with other options.
-            if (!lowLatencyExperiment && decoderSupportsAndroidRLowLatency(decoderInfo, videoFormat.getString(MediaFormat.KEY_MIME))) {
+            if (!lowLatencyExperiment && supportsAndroidRLowLatency) {
                 return true;
             }
         }
@@ -624,6 +666,7 @@ public class MediaCodecHelper {
             }
             else if (MediaCodecHelper.decoderSupportsMaxOperatingRate(decoderInfo.getName())) {
                 videoFormat.setInteger(MediaFormat.KEY_OPERATING_RATE, Short.MAX_VALUE);
+                videoFormat.setInteger(MediaFormat.KEY_PRIORITY, 0);
                 setNewOption = true;
             }
             else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -747,6 +790,43 @@ public class MediaCodecHelper {
         }
 
         return setNewOption;
+    }
+
+    /**
+     * Queries the codec's advertised vendor parameters (Android 12+ / API 31+) before configure()
+     * and applies ONLY vendor low-latency / SW-fence keys that this specific SoC explicitly supports.
+     * Safe across older Qualcomm, newer Qualcomm (SD8 Gen 2/3/Elite+), and non-Qualcomm chips.
+     */
+    public static void applySupportedVendorLowLatencyOptions(MediaCodec decoder,
+                                                             MediaFormat format,
+                                                             MediaCodecInfo decoderInfo,
+                                                             PreferenceConfiguration prefs) {
+        if (decoder == null || format == null || decoderInfo == null ||
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                shouldApplyXiaomiXringO1Optimizations(prefs)) {
+            return;
+        }
+        if (!isDecoderInList(qualcommDecoderPrefixes, decoderInfo.getName())) {
+            return;
+        }
+        try {
+            java.util.List<String> supported = decoder.getSupportedVendorParameters();
+            if (supported == null || supported.isEmpty()) {
+                return;
+            }
+            for (String param : supported) {
+                if ("vendor.qti-ext-dec-low-latency.enable".equalsIgnoreCase(param) ||
+                        "vendor.qti-ext-dec-picture-order.enable".equalsIgnoreCase(param) ||
+                        "vendor.qti-ext-output-sw-fence-enable.value".equalsIgnoreCase(param) ||
+                        "vendor.qti-ext-output-fence.enable".equalsIgnoreCase(param) ||
+                        "vendor.qti-ext-output-fence.fence_type".equalsIgnoreCase(param)) {
+                    safeSet(format, param, 1);
+                    LimeLog.info("Applied supported QTI vendor param: " + param + "=1");
+                }
+            }
+        } catch (Throwable ignored) {
+            // Some vendor Codec2 HALs may reject querying parameters before configure(); ignore safely.
+        }
     }
 
     public static void setDecoderLowLatencyRuntimeParameters(MediaCodec decoder,

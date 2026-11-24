@@ -638,11 +638,14 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
     }
 
-    private boolean tryConfigureDecoder(MediaCodecInfo selectedDecoderInfo, MediaFormat format, boolean throwOnCodecError) {
+    private boolean tryConfigureDecoder(MediaCodecInfo selectedDecoderInfo, MediaFormat format, boolean throwOnCodecError, boolean probeVendorParams) {
         boolean configured = false;
         try {
             videoDecoder = MediaCodec.createByCodecName(selectedDecoderInfo.getName());
             configuredDecoderInfo = selectedDecoderInfo;
+            if (probeVendorParams) {
+                MediaCodecHelper.applySupportedVendorLowLatencyOptions(videoDecoder, format, selectedDecoderInfo, prefs);
+            }
             configureAndStartDecoder(format);
             LimeLog.info("Using codec " + selectedDecoderInfo.getName() + " for hardware decoding " + format.getString(MediaFormat.KEY_MIME));
             configured = true;
@@ -752,7 +755,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 //                LimeLog.info("Decoder configuration colorFormats: "+colorFormat);
 //            }
             // Throw the underlying codec exception on the last attempt if the caller requested it
-            if (tryConfigureDecoder(selectedDecoderInfo, mediaFormat, !newFormat && throwOnCodecError)) {
+            if (tryConfigureDecoder(selectedDecoderInfo, mediaFormat, !newFormat && throwOnCodecError, tryNumber == 0)) {
                 // Success!
                 break;
             }
