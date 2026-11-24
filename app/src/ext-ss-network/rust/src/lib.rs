@@ -1,6 +1,10 @@
 // EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [ADDED]
 // UDP media is encrypted/decrypted in place on Moonlight's own sockets (see
 // jni/ss_hook.c); only the few setup TCP connections use the loopback relay below.
+use aes::{
+    cipher::{BlockDecrypt, BlockEncrypt, KeyInit},
+    Aes128, Aes256, Block,
+};
 use bytes::{Bytes, BytesMut};
 use serde::Deserialize;
 use shadowsocks::{
@@ -8,6 +12,7 @@ use shadowsocks::{
     context::{Context, SharedContext},
     crypto::{
         v1::{random_iv_or_salt, Cipher},
+        v2::udp::UdpCipher,
         CipherCategory, CipherKind,
     },
     relay::{
@@ -29,7 +34,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex, OnceLock,
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
     io::{copy_bidirectional, AsyncWriteExt},
@@ -38,8 +43,66 @@ use tokio::{
     time::timeout,
 };
 
+const AEAD2022_CLIENT_TYPE: u8 = 0;
+const AEAD2022_SERVER_TYPE: u8 = 1;
+const AEAD2022_MAX_TS_DIFF: u64 = 30;
+
 thread_local! {
     static UDP_ENC_BUF: RefCell<BytesMut> = RefCell::new(BytesMut::with_capacity(2048));
+}
+
+#[inline]
+fn unix_now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Pre-expanded AES-ECB cipher for SIP022 16-byte UDP packet header encryption.
+/// Eliminates per-packet `Aes128::new_from_slice` key schedule expansion.
+enum HeaderEcb {
+    None,
+    Aes128(Aes128),
+    Aes256(Aes256),
+}
+impl HeaderEcb {
+    fn new(method: CipherKind, key: &[u8], identity_keys: &[Bytes]) -> Self {
+        if !identity_keys.is_empty() {
+            return Self::None; // Multi-user EIH uses crypto_io fallback.
+        }
+        match method {
+            CipherKind::AEAD2022_BLAKE3_AES_128_GCM => Aes128::new_from_slice(key)
+                .map(Self::Aes128)
+                .unwrap_or(Self::None),
+            CipherKind::AEAD2022_BLAKE3_AES_256_GCM => Aes256::new_from_slice(key)
+                .map(Self::Aes256)
+                .unwrap_or(Self::None),
+            _ => Self::None,
+        }
+    }
+    #[inline]
+    fn is_some(&self) -> bool {
+        !matches!(self, Self::None)
+    }
+    #[inline]
+    fn encrypt_header(&self, header: &mut [u8]) {
+        let block = Block::from_mut_slice(header);
+        match self {
+            Self::Aes128(c) => c.encrypt_block(block),
+            Self::Aes256(c) => c.encrypt_block(block),
+            Self::None => unreachable!(),
+        }
+    }
+    #[inline]
+    fn decrypt_header(&self, header: &mut [u8]) {
+        let block = Block::from_mut_slice(header);
+        match self {
+            Self::Aes128(c) => c.decrypt_block(block),
+            Self::Aes256(c) => c.decrypt_block(block),
+            Self::None => unreachable!(),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -90,6 +153,7 @@ struct UdpNode {
     method: CipherKind,
     key: Box<[u8]>,
     identity_keys: Box<[Bytes]>,
+    header_ecb: HeaderEcb,
     ctx: SharedContext,
     host: ServerAddr,
     resolved: Mutex<Option<SocketAddrV4>>,
@@ -97,10 +161,15 @@ struct UdpNode {
 impl UdpNode {
     fn new(endpoint: &Endpoint, ctx: SharedContext) -> Arc<Self> {
         let config = &endpoint.config;
+        let method = config.method();
+        let key: Box<[u8]> = config.key().into();
+        let identity_keys: Box<[Bytes]> = config.identity_keys().into();
+        let header_ecb = HeaderEcb::new(method, &key, &identity_keys);
         Arc::new(Self {
-            method: config.method(),
-            key: config.key().into(),
-            identity_keys: config.identity_keys().into(),
+            method,
+            key,
+            identity_keys,
+            header_ecb,
             ctx,
             host: config.addr().clone(),
             resolved: Mutex::new(None),
@@ -145,11 +214,14 @@ impl UdpNode {
 }
 
 /// Per-socket UDP session state shared with C.
-/// Each Moonlight socket owns its own SIP022 `client_session_id` and monotonic `packet_id`.
+/// Each Moonlight socket owns its own SIP022 `client_session_id`, monotonic `packet_id`,
+/// pre-derived client `UdpCipher`, and inline single-slot server `UdpCipher` cache.
 pub struct UdpFlow {
     node: Arc<UdpNode>,
     client_session_id: u64,
     packet_id: AtomicU64,
+    client_cipher: Option<UdpCipher>,
+    server_cache: Mutex<Option<(u64, UdpCipher)>>,
 }
 impl UdpFlow {
     fn new(node: Arc<UdpNode>) -> Self {
@@ -159,10 +231,17 @@ impl UdpFlow {
             random_iv_or_salt(&mut bytes);
             sid = u64::from_be_bytes(bytes);
         }
+        let client_cipher = if node.header_ecb.is_some() {
+            Some(UdpCipher::new(node.method, &node.key, sid))
+        } else {
+            None
+        };
         Self {
             node,
             client_session_id: sid,
             packet_id: AtomicU64::new(0),
+            client_cipher,
+            server_cache: Mutex::new(None),
         }
     }
 }
@@ -252,6 +331,31 @@ pub unsafe extern "C" fn vss_udp_encrypt(
     let flow = &*flow;
     let node = &flow.node;
     if node.method.category() == CipherCategory::Aead2022 {
+        // Fast zero-allocation direct path for single-user 2022-blake3-aes-{128,256}-gcm
+        // with non-empty payloads (padding_size == 0 per SIP022).
+        if len > 0 {
+            if let Some(ref cipher) = flow.client_cipher {
+                let total = 34 + len + 16; // 16 hdr + 1 type + 8 ts + 2 pad + 7 ipv4 + payload + 16 tag
+                if total > cap {
+                    return -1;
+                }
+                let pkt = slice::from_raw_parts_mut(out, total);
+                let pid = flow.packet_id.fetch_add(1, Ordering::Relaxed);
+                pkt[0..8].copy_from_slice(&flow.client_session_id.to_be_bytes());
+                pkt[8..16].copy_from_slice(&pid.to_be_bytes());
+                pkt[16] = AEAD2022_CLIENT_TYPE;
+                pkt[17..25].copy_from_slice(&unix_now_secs().to_be_bytes());
+                pkt[25..27].copy_from_slice(&0u16.to_be_bytes());
+                pkt[27] = 1; // ATYP_V4
+                pkt[28..32].copy_from_slice(&ip.to_be_bytes());
+                pkt[32..34].copy_from_slice(&port.to_be_bytes());
+                pkt[34..34 + len].copy_from_slice(slice::from_raw_parts(data, len));
+                let (header, body) = pkt.split_at_mut(16);
+                cipher.encrypt_packet(&header[4..16], body);
+                node.header_ecb.encrypt_header(header);
+                return total as isize;
+            }
+        }
         let payload = if len > 0 { slice::from_raw_parts(data, len) } else { &[] };
         let addr = Address::SocketAddress(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::from(ip), port)));
         let mut control = UdpSocketControlData::default();
@@ -310,6 +414,55 @@ pub unsafe extern "C" fn vss_udp_decrypt_view(
     let flow = &*flow;
     let node = &flow.node;
     if node.method.category() == CipherCategory::Aead2022 {
+        // Fast zero-copy direct path for single-user 2022-blake3-aes-{128,256}-gcm:
+        // uses pre-expanded AES-ECB header cipher, inline single-slot server UdpCipher
+        // cache (zero LruCache/hashing), and returns *offset with zero copy_within.
+        if node.header_ecb.is_some() {
+            // Minimum Server->Client IPv4 packet: 16 hdr + 1 type + 8 ts + 8 csid + 2 pad + 7 ipv4 + 16 tag = 58
+            if len < 58 {
+                return -1;
+            }
+            let packet = slice::from_raw_parts_mut(buf, len);
+            let (header, body) = packet.split_at_mut(16);
+            node.header_ecb.decrypt_header(header);
+            let server_sid = u64::from_be_bytes(header[0..8].try_into().unwrap());
+            let nonce = &header[4..16];
+            let ok = {
+                let mut cache = flow.server_cache.lock().unwrap();
+                let need_new = match *cache {
+                    Some((sid, _)) => sid != server_sid,
+                    None => true,
+                };
+                if need_new {
+                    *cache = Some((server_sid, UdpCipher::new(node.method, &node.key, server_sid)));
+                }
+                cache.as_ref().unwrap().1.decrypt_packet(nonce, body)
+            };
+            if !ok {
+                return -1;
+            }
+            let plain = &body[..body.len() - 16];
+            if plain[0] != AEAD2022_SERVER_TYPE {
+                return -1;
+            }
+            let ts = u64::from_be_bytes(plain[1..9].try_into().unwrap());
+            if unix_now_secs().abs_diff(ts) > AEAD2022_MAX_TS_DIFF {
+                return -1;
+            }
+            let csid = u64::from_be_bytes(plain[9..17].try_into().unwrap());
+            if csid != flow.client_session_id {
+                return -1;
+            }
+            let pad_len = u16::from_be_bytes([plain[17], plain[18]]) as usize;
+            let addr_off = 19usize.saturating_add(pad_len);
+            if addr_off + 7 > plain.len() || plain[addr_off] != 1 {
+                return -1;
+            }
+            *ip = u32::from_be_bytes(plain[addr_off + 1..addr_off + 5].try_into().unwrap());
+            *port = u16::from_be_bytes([plain[addr_off + 5], plain[addr_off + 6]]);
+            *offset = 16 + addr_off + 7;
+            return (plain.len() - (addr_off + 7)) as isize;
+        }
         let packet = slice::from_raw_parts_mut(buf, len);
         let Ok((plain_len, addr, control)) =
             decrypt_server_payload(&node.ctx, node.method, &node.key, packet)
@@ -777,8 +930,10 @@ mod tests {
                     assert_eq!(client_ctrl.packet_id, pkt_idx as u64);
 
                     // Server encrypts reply with official shadowsocks SIP022 encoder
+                    // Rotate server_session_id on pkt_idx == 2 to verify inline cache refresh.
                     let mut reply_ctrl = UdpSocketControlData::default();
-                    reply_ctrl.server_session_id = 0x1122334455667788;
+                    reply_ctrl.server_session_id =
+                        if pkt_idx == 2 { 0x8877665544332211 } else { 0x1122334455667788 };
                     reply_ctrl.client_session_id = client_ctrl.client_session_id;
                     reply_ctrl.packet_id = pkt_idx as u64;
                     let mut reply_wire = BytesMut::with_capacity(2048);
@@ -805,9 +960,18 @@ mod tests {
                         )
                     };
                     assert_eq!(got as usize, payload.len());
-                    assert_eq!(off, 0);
+                    if matches!(
+                        method,
+                        CipherKind::AEAD2022_BLAKE3_AES_128_GCM
+                            | CipherKind::AEAD2022_BLAKE3_AES_256_GCM
+                    ) {
+                        // Zero-copy fast path returns direct offset into reply_wire (>= 42 B).
+                        assert!(off >= 42, "expected zero-copy offset >= 42 for {cipher_name}, got {off}");
+                    } else {
+                        assert_eq!(off, 0);
+                    }
                     assert_eq!((from_ip, from_port), (0x0a010114, 47998));
-                    assert_eq!(&reply_wire[..payload.len()], &payload[..]);
+                    assert_eq!(&reply_wire[off..off + payload.len()], &payload[..]);
 
                     // Wrong client_session_id must be rejected
                     reply_ctrl.client_session_id ^= 1;
