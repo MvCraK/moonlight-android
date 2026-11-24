@@ -1,6 +1,7 @@
 package com.limelight.ui.floatingview;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.os.Handler;
 import android.os.Looper;
@@ -9,8 +10,6 @@ import android.util.AttributeSet;
 import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-
-import com.limelight.preferences.PreferenceConfiguration;
 
 /**
 * 自动吸附悬浮窗view
@@ -57,11 +56,14 @@ public class AXFloatingMagnetView extends FrameLayout {
         mMoveAnimator = new MoveAnimator();
         mStatusBarHeight = 0;
         setClickable(true);
-        if(PreferenceConfiguration.readPreferences(getContext()).axFloatingPostionAuto
-                &&PreferenceConfiguration.readPreferences(getContext()).axFloatingPostionX !=-1){
-            setX(PreferenceConfiguration.readPreferences(getContext()).axFloatingPostionX);
-            setY(PreferenceConfiguration.readPreferences(getContext()).axFloatingPostionY);
-            isNearestLeft=PreferenceConfiguration.readPreferences(getContext()).axFloatingPostionIsNearestLeft;
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getContext());
+        if (prefs.getBoolean("ax_floating_postion_auto", false)) {
+            float savedX = prefs.getFloat("ax_floating_postion_x", -1f);
+            if (savedX != -1f) {
+                setX(savedX);
+                setY(prefs.getFloat("ax_floating_postion_y", -1f));
+                isNearestLeft = prefs.getBoolean("ax_floating_postion_isnearestleft", true);
+            }
         }
         startDelayedAction();
 //        updateSize();
@@ -77,18 +79,12 @@ public class AXFloatingMagnetView extends FrameLayout {
                 animate().alpha(0.35f).setDuration(100).start();
                 float x=isNearestLeft? (float) -getWidth() /2:getX()+ (float) getWidth() /2;
                 animate().translationX(x).setDuration(100).start();
-                if(PreferenceConfiguration.readPreferences(getContext()).axFloatingPostionAuto){
-                    PreferenceManager.getDefaultSharedPreferences(getContext())
-                            .edit()
-                            .putFloat("ax_floating_postion_x",getX())
-                            .apply();
-                    PreferenceManager.getDefaultSharedPreferences(getContext())
-                            .edit()
-                            .putFloat("ax_floating_postion_y",getY())
-                            .apply();
-                    PreferenceManager.getDefaultSharedPreferences(getContext())
-                            .edit()
-                            .putBoolean("ax_floating_postion_isnearestleft",isNearestLeft)
+                SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getContext());
+                if (prefs.getBoolean("ax_floating_postion_auto", false)) {
+                    prefs.edit()
+                            .putFloat("ax_floating_postion_x", getX())
+                            .putFloat("ax_floating_postion_y", getY())
+                            .putBoolean("ax_floating_postion_isnearestleft", isNearestLeft)
                             .apply();
                 }
             }

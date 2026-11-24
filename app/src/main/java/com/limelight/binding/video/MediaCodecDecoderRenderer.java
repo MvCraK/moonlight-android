@@ -136,6 +136,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
     private LinkedBlockingQueue<Integer> outputBufferQueue = new LinkedBlockingQueue<>();
     private static final int OUTPUT_BUFFER_QUEUE_LIMIT = 2;
     private long lastRenderedFrameTimeNanos;
+    private volatile long cachedAppVsyncOffsetNanos;
     private HandlerThread choreographerHandlerThread;
     private Handler choreographerHandler;
 
@@ -1077,7 +1078,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            frameTimeNanos -= activity.getWindowManager().getDefaultDisplay().getAppVsyncOffsetNanos();
+            frameTimeNanos -= cachedAppVsyncOffsetNanos;
         }
 
         // Don't render unless a new frame is due. This prevents microstutter when streaming
@@ -1124,11 +1125,22 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         Choreographer.getInstance().postFrameCallback(this);
     }
 
+    public void refreshDisplayMetrics() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && activity != null) {
+            android.view.Display display = activity.getWindowManager().getDefaultDisplay();
+            if (display != null) {
+                cachedAppVsyncOffsetNanos = display.getAppVsyncOffsetNanos();
+            }
+        }
+    }
+
     private void startChoreographerThread() {
         if (forceImmediateRendering || prefs.framePacing != PreferenceConfiguration.FRAME_PACING_BALANCED) {
             // Not using Choreographer in this pacing mode
             return;
         }
+
+        refreshDisplayMetrics();
 
         // We use a separate thread to avoid any main thread delays from delaying rendering
         choreographerHandlerThread = new HandlerThread("Video - Choreographer", Process.THREAD_PRIORITY_URGENT_DISPLAY);
@@ -1556,9 +1568,18 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         } else if (frameNumber != lastFrameNumber && frameNumber != lastFrameNumber + 1) {
             // We can receive the same "frame" multiple times if it's an IDR frame.
             // In that case, each frame start NALU is submitted independently.
-            activeWindowVideoStats.framesLost += frameNumber - lastFrameNumber - 1;
-            activeWindowVideoStats.totalFrames += frameNumber - lastFrameNumber - 1;
+            int missingFrames = frameNumber - lastFrameNumber - 1;
+            if (missingFrames > 0) {
+                activeWindowVideoStats.framesLost += missingFrames;
+                activeWindowVideoStats.totalFrames += missingFrames;
+            }
             activeWindowVideoStats.frameLossEvents++;
+            if (frameType != MoonBridge.FRAME_TYPE_IDR) {
+                // Drop broken-reference P-frames instead of feeding corrupted macroblocks
+                // into MediaCodec, and immediately ask the host for a clean IDR frame.
+                resumeNeedsIdr = true;
+                return MoonBridge.DR_NEED_IDR;
+            }
         }
 
         // Reset CSD data for each IDR frame
@@ -1964,9 +1985,19 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         if (lastFrameNumber == 0) {
             activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();
         } else if (frameNumber != lastFrameNumber && frameNumber != lastFrameNumber + 1) {
-            activeWindowVideoStats.framesLost += frameNumber - lastFrameNumber - 1;
-            activeWindowVideoStats.totalFrames += frameNumber - lastFrameNumber - 1;
+            int missingFrames = frameNumber - lastFrameNumber - 1;
+            if (missingFrames > 0) {
+                activeWindowVideoStats.framesLost += missingFrames;
+                activeWindowVideoStats.totalFrames += missingFrames;
+            }
             activeWindowVideoStats.frameLossEvents++;
+            if (frameType != MoonBridge.FRAME_TYPE_IDR) {
+                // Drop broken-reference P-frames on the direct-buffer path as well so
+                // packet/queue drops on 5G never flash macroblock artifacts before IDR recovery.
+                resumeNeedsIdr = true;
+                lastDirectAcquireStatus = MoonBridge.DR_NEED_IDR;
+                return null;
+            }
         }
 
         if (lastFrameNumber != frameNumber && frameType == MoonBridge.FRAME_TYPE_IDR) {

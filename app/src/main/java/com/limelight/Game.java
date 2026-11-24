@@ -138,6 +138,8 @@ import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
 import android.view.ViewParent;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.view.inputmethod.InputMethodManager;
@@ -151,6 +153,7 @@ import java.lang.reflect.Method;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -263,6 +266,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     private volatile PerfOverlayStats latestSessionPerfStats;
     private volatile long latestSessionPerfStatsElapsedMs;
     private volatile int currentHdrMasteringPeakLuminanceNits;
+    private int cachedHdrPeakDisplayId = Display.INVALID_DISPLAY;
+    private String cachedHdrPeakLuminanceText;
+    private final ArrayList<PerfRowHolder> fullPerfRowHolders = new ArrayList<>();
+    private int fullPerfRowCursor;
+    private boolean initialImmersiveFocusSynced;
+    private android.app.Dialog initialImmersiveSyncDialog;
+    private boolean initialImmersiveSyncDialogActive;
     private int lastLoggedConnectionStatus = Integer.MIN_VALUE;
     private NvApp app;
     private float desiredRefreshRate;
@@ -472,6 +482,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
                 @Override
                 public void onDisplayChanged(int displayId) {
+                    invalidateDisplayMetricCaches();
                     if (displayId == activeExternalDisplayId) {
                         Display display = externalDisplayManager != null
                                 ? externalDisplayManager.getDisplay(displayId) : null;
@@ -518,6 +529,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         // Inflate the content
         setContentView(R.layout.activity_game);
+        applyImmersiveSystemUi();
 
         streamLoadingController = new StreamLoadingOverlayController(
                 this,
@@ -1662,6 +1674,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             videoZoomGestureOverlay.resetTransform();
         }
         super.onConfigurationChanged(newConfig);
+        invalidateDisplayMetricCaches();
+        hideSystemUi(50);
+        initialImmersiveFocusSynced = false;
+        scheduleInitialImmersiveFocusSync();
 
 
         // Set requested orientation for possible new screen size
@@ -1866,36 +1882,42 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        boolean transientImmersiveSyncLoss = !hasFocus && initialImmersiveSyncDialogActive;
         // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
-        if (!hasFocus) {
+        if (!hasFocus && !transientImmersiveSyncLoss) {
             voice.reset();
             cancelStylusInput();
         }
         // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
 
         // EXTENSION DEVELOPMENT [EXT-IME-ACCESSORY-BAR] [MODIFIED] BEGIN
-        if (!hasFocus && imeKeyboardExtensionController != null) {
+        if (!hasFocus && !transientImmersiveSyncLoss && imeKeyboardExtensionController != null) {
             imeKeyboardExtensionController.releasePressedKeys();
         }
         // EXTENSION DEVELOPMENT [EXT-IME-ACCESSORY-BAR] [MODIFIED] END
 
         // We can't guarantee the state of modifiers keys which may have
         // lifted while focus was not on us. Clear the modifier state.
-        this.modifierFlags = 0;
+        if (!transientImmersiveSyncLoss) {
+            this.modifierFlags = 0;
+        }
 
         // With Android native pointer capture, capture is lost when focus is lost,
         // so it must be requested again when focus is regained.
         inputCaptureProvider.onWindowFocusChanged(hasFocus);
-        if (virtualMouseOverlay != null) {
+        if (virtualMouseOverlay != null && !transientImmersiveSyncLoss) {
             setVirtualMouseInputSuppressed(!hasFocus);
         }
-        if (videoZoomGestureOverlay != null) {
+        if (videoZoomGestureOverlay != null && !transientImmersiveSyncLoss) {
             setVideoZoomInputSuppressed(!hasFocus);
         }
         if (hasFocus) {
+            applyImmersiveSystemUi();
+            hideSystemUi(50);
+            scheduleInitialImmersiveFocusSync();
             revealDsTouchpadAndScheduleAutoHide();
         }
-        else {
+        else if (!transientImmersiveSyncLoss) {
             cancelDsTouchpadDrag();
             releaseDsTouchpadInput();
         }
@@ -2138,36 +2160,200 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     }
 
     @SuppressLint("InlinedApi")
+    private void applyImmersiveSystemUi() {
+        Window window = getWindow();
+        if (window == null) {
+            return;
+        }
+        View decorView = window.getDecorView();
+        if (decorView == null) {
+            return;
+        }
+
+        // In multi-window mode on N+, we need to drop our layout flags or we'll
+        // be drawing underneath the system UI.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowInsetsController controller = window.getInsetsController();
+                if (controller != null) {
+                    controller.show(WindowInsets.Type.systemBars());
+                }
+            }
+            decorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+        }
+        else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowInsetsController controller = window.getInsetsController();
+                if (controller != null) {
+                    controller.setSystemBarsBehavior(
+                            WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    controller.hide(WindowInsets.Type.systemBars());
+                }
+            }
+            // Keep legacy immersive flags in sync for OEM overlays and pre-R devices.
+            decorView.setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                    View.SYSTEM_UI_FLAG_FULLSCREEN |
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        }
+    }
+
     private final Runnable hideSystemUi = new Runnable() {
             @Override
             public void run() {
-                // TODO: Do we want to use WindowInsetsController here on R+ instead of
-                // SYSTEM_UI_FLAG_IMMERSIVE_STICKY? They seem to do the same thing as of S...
-
-                // In multi-window mode on N+, we need to drop our layout flags or we'll
-                // be drawing underneath the system UI.
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode()) {
-                    Game.this.getWindow().getDecorView().setSystemUiVisibility(
-                            View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
-                }
-                else {
-                    // Use immersive mode
-                    Game.this.getWindow().getDecorView().setSystemUiVisibility(
-                            View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
-                            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
-                            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
-                            View.SYSTEM_UI_FLAG_FULLSCREEN |
-                            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
-                }
+                applyImmersiveSystemUi();
             }
     };
 
     private void hideSystemUi(int delay) {
-        Handler h = getWindow().getDecorView().getHandler();
-        if (h != null) {
-            h.removeCallbacks(hideSystemUi);
-            h.postDelayed(hideSystemUi, delay);
+        Window window = getWindow();
+        if (window == null) {
+            return;
+        }
+        View decorView = window.getDecorView();
+        if (decorView == null) {
+            return;
+        }
+        decorView.removeCallbacks(hideSystemUi);
+        if (delay <= 0) {
+            applyImmersiveSystemUi();
+        }
+        else {
+            decorView.postDelayed(hideSystemUi, delay);
+        }
+    }
+
+    private final Runnable initialImmersiveFocusSyncRunnable = new Runnable() {
+        @Override
+        public void run() {
+            performInitialImmersiveFocusSync();
+        }
+    };
+
+    private final Runnable dismissInitialImmersiveSyncDialogRunnable = new Runnable() {
+        @Override
+        public void run() {
+            dismissInitialImmersiveSyncDialog();
+            applyImmersiveSystemUi();
+        }
+    };
+
+    private void scheduleInitialImmersiveFocusSync() {
+        if (initialImmersiveFocusSynced || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode()) {
+            return;
+        }
+        Window window = getWindow();
+        if (window == null || window.getDecorView() == null) {
+            return;
+        }
+        View decorView = window.getDecorView();
+        decorView.removeCallbacks(initialImmersiveFocusSyncRunnable);
+        // On Samsung One UI foldables, Portrait -> Landscape rotation into immersive Game can leave
+        // TaskbarWindow's insets_animation leash stuck visible (flags=0x0, missing NOT_VISIBLE) even
+        // though navigationBars is hidden. Showing a brief invisible non-floating dialog after rotation
+        // settles triggers DisplayPolicy.updateSystemBarAttributes -> onControlTargetChanged, which
+        // cancels the stale leash and recreates it hidden (flags=0x1, NOT_VISIBLE) for Game.
+        decorView.postDelayed(initialImmersiveFocusSyncRunnable, 500);
+    }
+
+    @SuppressLint("InlinedApi")
+    private void performInitialImmersiveFocusSync() {
+        if (initialImmersiveFocusSynced || isFinishing() || isDestroyed() || !hasWindowFocus()) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInMultiWindowMode()) {
+            return;
+        }
+        Window window = getWindow();
+        if (window == null || window.getDecorView() == null) {
+            return;
+        }
+        dismissInitialImmersiveSyncDialog();
+        initialImmersiveFocusSynced = true;
+        try {
+            android.app.Dialog syncDialog = new android.app.Dialog(this, R.style.ImmersiveSyncDialog);
+            syncDialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+            View emptyView = new View(this);
+            emptyView.setBackgroundColor(Color.TRANSPARENT);
+            syncDialog.setContentView(emptyView);
+            syncDialog.setCancelable(false);
+            syncDialog.setCanceledOnTouchOutside(false);
+
+            Window dialogWindow = syncDialog.getWindow();
+            if (dialogWindow != null) {
+                dialogWindow.getDecorView().setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                WindowInsetsController dialogController = dialogWindow.getInsetsController();
+                if (dialogController != null) {
+                    dialogController.setSystemBarsBehavior(
+                            WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    dialogController.hide(WindowInsets.Type.systemBars());
+                }
+                WindowManager.LayoutParams params = dialogWindow.getAttributes();
+                params.dimAmount = 0f;
+                params.windowAnimations = 0;
+                params.width = WindowManager.LayoutParams.MATCH_PARENT;
+                params.height = WindowManager.LayoutParams.MATCH_PARENT;
+                params.gravity = Gravity.FILL;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    params.layoutInDisplayCutoutMode =
+                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                }
+                dialogWindow.setAttributes(params);
+            }
+
+            initialImmersiveSyncDialog = syncDialog;
+            initialImmersiveSyncDialogActive = true;
+            syncDialog.show();
+
+            View decorView = window.getDecorView();
+            decorView.removeCallbacks(dismissInitialImmersiveSyncDialogRunnable);
+            decorView.postDelayed(dismissInitialImmersiveSyncDialogRunnable, 100);
+        }
+        catch (RuntimeException e) {
+            initialImmersiveSyncDialogActive = false;
+            initialImmersiveSyncDialog = null;
+        }
+    }
+
+    private void dismissInitialImmersiveSyncDialog() {
+        Window window = getWindow();
+        if (window != null && window.getDecorView() != null) {
+            window.getDecorView().removeCallbacks(dismissInitialImmersiveSyncDialogRunnable);
+        }
+        android.app.Dialog syncDialog = initialImmersiveSyncDialog;
+        initialImmersiveSyncDialog = null;
+        initialImmersiveSyncDialogActive = false;
+        if (syncDialog != null) {
+            try {
+                if (syncDialog.isShowing()) {
+                    syncDialog.dismiss();
+                }
+            }
+            catch (RuntimeException ignored) {
+            }
+        }
+    }
+
+    private void invalidateDisplayMetricCaches() {
+        cachedHdrPeakDisplayId = Display.INVALID_DISPLAY;
+        cachedHdrPeakLuminanceText = null;
+        if (decoderRenderer != null) {
+            decoderRenderer.refreshDisplayMetrics();
         }
     }
 
@@ -2198,6 +2384,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     protected void onDestroy() {
         logSessionInfo("LIFECYCLE", "串流页面正在销毁");
+        if (getWindow() != null && getWindow().getDecorView() != null) {
+            getWindow().getDecorView().removeCallbacks(initialImmersiveFocusSyncRunnable);
+        }
+        dismissInitialImmersiveSyncDialog();
         backgroundReconnectHandler.removeCallbacksAndMessages(null);
         sessionTelemetryHandler.removeCallbacksAndMessages(null);
         emitSessionTelemetry();
@@ -2297,6 +2487,8 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     protected void onResume() {
         super.onResume();
         activityResumed = true;
+        applyImmersiveSystemUi();
+        hideSystemUi(50);
         revealDsTouchpadAndScheduleAutoHide();
 
         if (virtualMouseOverlay != null) {
@@ -2317,6 +2509,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     protected void onPause() {
+        dismissInitialImmersiveSyncDialog();
         // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] BEGIN
         voice.reset();
         // EXTENSION DEVELOPMENT [EXT-REMOTE-VOICE] [MODIFIED] END
@@ -2359,6 +2552,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     protected void onStop() {
         super.onStop();
+        initialImmersiveFocusSynced = false;
 
         if (virtualMouseOverlay != null) {
             virtualMouseOverlay.setInputSuppressed(true);
@@ -4849,22 +5043,33 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     @Override
     public void onPerfUpdate(final PerfOverlayStats stats) {
-        if (streamTelemetryReporter != null && stats != null) {
+        if (stats != null) {
             latestSessionPerfStatsElapsedMs = SystemClock.elapsedRealtime();
             latestSessionPerfStats = stats;
+        }
+        if (!prefConfig.enablePerfOverlay) {
+            return;
         }
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                if(prefConfig.enablePerfOverlayLite){
-                    String displayText = buildLitePerfInfo(stats);
-                    CharSequence styledDisplayText = applyPerfOverlayColors(displayText);
-                    performanceOverlayLite.setText(styledDisplayText);
-                }else{
-                    renderFullPerfInfo(stats);
+                if (!prefConfig.enablePerfOverlay) {
+                    return;
                 }
+                renderCurrentPerfOverlay(stats);
             }
         });
+    }
+
+    private void renderCurrentPerfOverlay(PerfOverlayStats stats) {
+        if (prefConfig.enablePerfOverlayLite) {
+            String displayText = buildLitePerfInfo(stats);
+            CharSequence styledDisplayText = applyPerfOverlayColors(displayText);
+            performanceOverlayLite.setText(styledDisplayText);
+        }
+        else {
+            renderFullPerfInfo(stats);
+        }
     }
 
     private String buildLitePerfInfo(PerfOverlayStats stats) {
@@ -4915,12 +5120,13 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (performanceOverlayBigContent == null) {
             return;
         }
-        performanceOverlayBigContent.removeAllViews();
+        fullPerfRowCursor = 0;
 
         if (stats == null) {
             addPerfRow("状态", "--");
             addPerfRow("USB/IP", buildUsbIpStatusText());
             addPerfRow("USB/IP地址", buildUsbIpAddressText(), true);
+            finishFullPerfRows();
             return;
         }
 
@@ -4970,6 +5176,32 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         addPerfRow("USB手柄", buildUsbControllerStatusText());
         addPerfRow("USB/IP", buildUsbIpStatusText());
         addPerfRow("USB/IP地址", buildUsbIpAddressText(), true);
+        finishFullPerfRows();
+    }
+
+    private static final class PerfRowHolder {
+        final LinearLayout row;
+        final TextView labelView;
+        final TextView valueView;
+        String lastLabel;
+        String lastValue;
+        boolean lastMultiline;
+
+        PerfRowHolder(LinearLayout row, TextView labelView, TextView valueView, boolean multiline) {
+            this.row = row;
+            this.labelView = labelView;
+            this.valueView = valueView;
+            this.lastMultiline = multiline;
+        }
+    }
+
+    private void finishFullPerfRows() {
+        for (int i = fullPerfRowCursor; i < fullPerfRowHolders.size(); i++) {
+            LinearLayout row = fullPerfRowHolders.get(i).row;
+            if (row.getVisibility() != View.GONE) {
+                row.setVisibility(View.GONE);
+            }
+        }
     }
 
     /** Read the service-owned USB/IP state without retaining an old handoff state in the UI. */
@@ -4994,44 +5226,75 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     /** Wrap overflowing performance values without changing text, font size or the HUD container geometry. */
     private void addPerfRow(String label, String value, boolean wrapValue) {
         boolean multiline = wrapValue;
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(multiline ? Gravity.TOP : Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        rowParams.topMargin = performanceOverlayBigContent.getChildCount() == 0 ? 0 : UiHelper.dpToPx(this, 6);
-        row.setLayoutParams(rowParams);
+        String safeLabel = label != null ? label : "";
+        String normalizedValue = nonEmpty(value, "--");
+        PerfRowHolder holder;
 
-        TextView labelView = new TextView(this);
-        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        labelView.setLayoutParams(labelParams);
-        labelView.setText(label);
-        labelView.setTextColor(Color.argb(204, 218, 230, 255));
-        labelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
-        labelView.setSingleLine(true);
-
-        TextView valueView = new TextView(this);
-        LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.5f);
-        valueView.setLayoutParams(valueParams);
-        valueView.setText(applyPerfOverlayColors(nonEmpty(value, "--")));
-        valueView.setTextColor(Color.WHITE);
-        valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
-        valueView.setGravity(Gravity.END);
-        valueView.setSingleLine(!multiline);
-        if (multiline) {
-            valueView.setHorizontallyScrolling(false);
-            valueView.setEllipsize(null);
-            valueView.setTextDirection(View.TEXT_DIRECTION_LTR);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                valueView.setBreakStrategy(android.text.Layout.BREAK_STRATEGY_SIMPLE);
-                valueView.setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_NONE);
+        if (fullPerfRowCursor < fullPerfRowHolders.size()) {
+            holder = fullPerfRowHolders.get(fullPerfRowCursor);
+            if (holder.row.getVisibility() != View.VISIBLE) {
+                holder.row.setVisibility(View.VISIBLE);
+            }
+            if (holder.lastMultiline != multiline) {
+                holder.lastMultiline = multiline;
+                holder.row.setGravity(multiline ? Gravity.TOP : Gravity.CENTER_VERTICAL);
+                holder.valueView.setSingleLine(!multiline);
+                if (multiline) {
+                    holder.valueView.setHorizontallyScrolling(false);
+                    holder.valueView.setEllipsize(null);
+                }
             }
         }
+        else {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(multiline ? Gravity.TOP : Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            rowParams.topMargin = fullPerfRowCursor == 0 ? 0 : UiHelper.dpToPx(this, 6);
+            row.setLayoutParams(rowParams);
 
-        row.addView(labelView);
-        row.addView(valueView);
-        performanceOverlayBigContent.addView(row);
+            TextView labelView = new TextView(this);
+            LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            labelView.setLayoutParams(labelParams);
+            labelView.setTextColor(Color.argb(204, 218, 230, 255));
+            labelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
+            labelView.setSingleLine(true);
+
+            TextView valueView = new TextView(this);
+            LinearLayout.LayoutParams valueParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.5f);
+            valueView.setLayoutParams(valueParams);
+            valueView.setTextColor(Color.WHITE);
+            valueView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f);
+            valueView.setGravity(Gravity.END);
+            valueView.setSingleLine(!multiline);
+            if (multiline) {
+                valueView.setHorizontallyScrolling(false);
+                valueView.setEllipsize(null);
+                valueView.setTextDirection(View.TEXT_DIRECTION_LTR);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    valueView.setBreakStrategy(android.text.Layout.BREAK_STRATEGY_SIMPLE);
+                    valueView.setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_NONE);
+                }
+            }
+
+            row.addView(labelView);
+            row.addView(valueView);
+            performanceOverlayBigContent.addView(row);
+            holder = new PerfRowHolder(row, labelView, valueView, multiline);
+            fullPerfRowHolders.add(holder);
+        }
+
+        if (!safeLabel.equals(holder.lastLabel)) {
+            holder.lastLabel = safeLabel;
+            holder.labelView.setText(safeLabel);
+        }
+        if (!normalizedValue.equals(holder.lastValue)) {
+            holder.lastValue = normalizedValue;
+            holder.valueView.setText(applyPerfOverlayColors(normalizedValue));
+        }
+        fullPerfRowCursor++;
     }
 
     private Display getActiveRenderDisplay() {
@@ -5054,22 +5317,28 @@ public class Game extends Activity implements SurfaceHolder.Callback,
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || display == null) {
             return "系统未报告";
         }
+        int displayId = display.getDisplayId();
+        if (displayId == cachedHdrPeakDisplayId && cachedHdrPeakLuminanceText != null) {
+            return cachedHdrPeakLuminanceText;
+        }
 
+        String resolved = "系统未报告";
         try {
             Display.HdrCapabilities hdrCapabilities = display.getHdrCapabilities();
-            if (hdrCapabilities == null) {
-                return "系统未报告";
+            if (hdrCapabilities != null) {
+                float peakLuminance = hdrCapabilities.getDesiredMaxLuminance();
+                if (isValidPositiveDisplayValue(peakLuminance)
+                        && peakLuminance != Display.HdrCapabilities.INVALID_LUMINANCE) {
+                    resolved = String.format(Locale.US, "%,.0f nit", peakLuminance);
+                }
             }
-            float peakLuminance = hdrCapabilities.getDesiredMaxLuminance();
-            if (!isValidPositiveDisplayValue(peakLuminance)
-                    || peakLuminance == Display.HdrCapabilities.INVALID_LUMINANCE) {
-                return "系统未报告";
-            }
-            return String.format(Locale.US, "%,.0f nit", peakLuminance);
         }
         catch (RuntimeException e) {
-            return "系统未报告";
+            resolved = "系统未报告";
         }
+        cachedHdrPeakDisplayId = displayId;
+        cachedHdrPeakLuminanceText = resolved;
+        return resolved;
     }
 
     private String buildHdrSdrRatioText(Display display) {
@@ -5473,22 +5742,32 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             }else{
                 performanceOverlayBig.setVisibility(View.VISIBLE);
             }
+            if (latestSessionPerfStats != null) {
+                renderCurrentPerfOverlay(latestSessionPerfStats);
+            }
             return;
         }
         performanceOverlayView.setVisibility(View.GONE);
     }
 
     public void switchHUD(){
+        prefConfig.enablePerfOverlay = true;
         performanceOverlayView.setVisibility(View.VISIBLE);
         if(performanceOverlayLite.getVisibility()==View.VISIBLE){
             prefConfig.enablePerfOverlayLite=false;
             performanceOverlayBig.setVisibility(View.VISIBLE);
             performanceOverlayLite.setVisibility(View.GONE);
+            if (latestSessionPerfStats != null) {
+                renderCurrentPerfOverlay(latestSessionPerfStats);
+            }
             return;
         }
         prefConfig.enablePerfOverlayLite=true;
         performanceOverlayBig.setVisibility(View.GONE);
         performanceOverlayLite.setVisibility(View.VISIBLE);
+        if (latestSessionPerfStats != null) {
+            renderCurrentPerfOverlay(latestSessionPerfStats);
+        }
     }
 
     public void setPerformanceOverlayMode(){
@@ -5500,6 +5779,9 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             performanceOverlayBig.setVisibility(View.VISIBLE);
         }
         performanceOverlayView.setVisibility(prefConfig.enablePerfOverlay ? View.VISIBLE : View.GONE);
+        if (prefConfig.enablePerfOverlay && latestSessionPerfStats != null) {
+            renderCurrentPerfOverlay(latestSessionPerfStats);
+        }
     }
 
     //切换触控灵敏度开关
@@ -6116,6 +6398,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             controllerHandler.setGameMenuVisible(false);
         }
         dialogGameMenu = null;
+        hideSystemUi(50);
         revealDsTouchpadAndScheduleAutoHide();
     }
 

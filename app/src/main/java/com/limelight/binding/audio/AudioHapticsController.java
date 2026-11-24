@@ -29,9 +29,18 @@ public final class AudioHapticsController {
     public static final String VOICE_FILTER_HIGH = "high";
 
     private final Vibrator vibrator;
+    private final boolean hasVibrator;
+    private final boolean hasAmplitudeControl;
+    private final VibrationAttributes cachedVibrationAttributes;
+    private final AudioAttributes cachedAudioAttributes;
     private boolean enabled;
     private int strengthPercent;
     private String voiceFilterMode;
+    private float cachedStrengthScale;
+    private float cachedVoiceSuppression;
+    private boolean cachedHighVoiceFilter;
+    private float cachedLowPassAlpha;
+    private float cachedVoiceLowPassAlpha;
 
     private int channelCount;
     private int sampleRate;
@@ -45,9 +54,26 @@ public final class AudioHapticsController {
     public AudioHapticsController(Context context, boolean enabled, int strengthPercent,
                                   String voiceFilterMode) {
         this.vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
-        this.enabled = enabled && this.vibrator != null && this.vibrator.hasVibrator();
+        this.hasVibrator = this.vibrator != null && this.vibrator.hasVibrator();
+        this.hasAmplitudeControl = this.hasVibrator
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && this.vibrator.hasAmplitudeControl();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            this.cachedVibrationAttributes = new VibrationAttributes.Builder()
+                    .setUsage(VibrationAttributes.USAGE_MEDIA)
+                    .build();
+            this.cachedAudioAttributes = null;
+        }
+        else {
+            this.cachedVibrationAttributes = null;
+            this.cachedAudioAttributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .build();
+        }
+        this.enabled = enabled && this.hasVibrator;
         this.strengthPercent = Math.max(0, strengthPercent);
         this.voiceFilterMode = normalizeVoiceFilterMode(voiceFilterMode);
+        updateCachedParameters();
     }
 
     public synchronized void configure(int channelCount, int sampleRate) {
@@ -59,6 +85,7 @@ public final class AudioHapticsController {
         this.lastAmplitude = 0;
         this.lastVibrationTimeMs = 0L;
         this.lastOutputTimeMs = 0L;
+        updateCachedParameters();
     }
 
     public synchronized boolean isEnabled() {
@@ -71,13 +98,24 @@ public final class AudioHapticsController {
     }
 
     public synchronized void setSettings(boolean enabled, int strengthPercent, String voiceFilterMode) {
-        boolean resolvedEnabled = enabled && vibrator != null && vibrator.hasVibrator();
+        boolean resolvedEnabled = enabled && hasVibrator;
         boolean wasEnabled = this.enabled;
         this.enabled = resolvedEnabled;
         this.strengthPercent = Math.max(0, strengthPercent);
         this.voiceFilterMode = normalizeVoiceFilterMode(voiceFilterMode);
+        updateCachedParameters();
         if (wasEnabled && !resolvedEnabled) {
             stop();
+        }
+    }
+
+    private void updateCachedParameters() {
+        this.cachedStrengthScale = (float) Math.pow(strengthPercent / 100.0f, 2.35f);
+        this.cachedVoiceSuppression = getVoiceSuppressionStrength();
+        this.cachedHighVoiceFilter = VOICE_FILTER_HIGH.equals(voiceFilterMode);
+        if (sampleRate > 0) {
+            this.cachedLowPassAlpha = getLowPassAlpha();
+            this.cachedVoiceLowPassAlpha = getVoiceLowPassAlpha();
         }
     }
 
@@ -86,8 +124,8 @@ public final class AudioHapticsController {
             return;
         }
 
-        float alpha = getLowPassAlpha();
-        float voiceAlpha = getVoiceLowPassAlpha();
+        float alpha = cachedLowPassAlpha;
+        float voiceAlpha = cachedVoiceLowPassAlpha;
         float envelope = 0.0f;
         float voiceEnvelope = 0.0f;
         int frames = audioData.length / channelCount;
@@ -153,14 +191,14 @@ public final class AudioHapticsController {
     }
 
     private float applyVoiceFilter(float bassLevel, float voiceLevel) {
-        float suppression = getVoiceSuppressionStrength();
+        float suppression = cachedVoiceSuppression;
         if (suppression <= 0.0f) {
             return bassLevel;
         }
 
         float filtered = Math.max(0.0f, bassLevel - (voiceLevel * suppression));
 
-        if (VOICE_FILTER_HIGH.equals(voiceFilterMode)) {
+        if (cachedHighVoiceFilter) {
             float voiceDominance = voiceLevel / Math.max(0.0025f, bassLevel + voiceLevel);
             if (voiceDominance > 0.42f) {
                 float attenuation = Math.max(0.10f, 1.0f - ((voiceDominance - 0.42f) * 2.2f));
@@ -201,15 +239,14 @@ public final class AudioHapticsController {
         }
 
         float curved = (float) Math.pow(Math.min(1.0f, level), 0.82f);
-        float strengthScale = (float) Math.pow(strengthPercent / 100.0f, 2.35f);
-        int amplitude = Math.round(curved * 255.0f * strengthScale);
+        int amplitude = Math.round(curved * 255.0f * cachedStrengthScale);
         return Math.max(0, Math.min(255, amplitude));
     }
 
     private void dispatch(int amplitude) {
         long now = SystemClock.uptimeMillis();
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && vibrator.hasAmplitudeControl()) {
+        if (hasAmplitudeControl && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (amplitude == 0) {
                 if (lastAmplitude != 0) {
                     vibrator.cancel();
@@ -225,16 +262,10 @@ public final class AudioHapticsController {
 
             VibrationEffect effect = VibrationEffect.createOneShot(EFFECT_DURATION_MS, amplitude);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                VibrationAttributes attrs = new VibrationAttributes.Builder()
-                        .setUsage(VibrationAttributes.USAGE_MEDIA)
-                        .build();
-                vibrator.vibrate(effect, attrs);
+                vibrator.vibrate(effect, cachedVibrationAttributes);
             }
             else {
-                AudioAttributes attrs = new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_GAME)
-                        .build();
-                vibrator.vibrate(effect, attrs);
+                vibrator.vibrate(effect, cachedAudioAttributes);
             }
 
             lastAmplitude = amplitude;

@@ -2,6 +2,7 @@ package com.limelight.binding.audio;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -17,20 +18,35 @@ import com.limelight.nvstream.jni.MoonBridge;
 
 public class AndroidAudioRenderer implements AudioRenderer {
 
+    private static final String PREF_AUDIO_MUTE = "ax_audio_mute";
+
     private final Context context;
+    private final SharedPreferences sharedPreferences;
     private final boolean enableAudioFx;
     private final String audioHapticsOutputTarget;
     private final AudioHapticsController phoneAudioHapticsController;
     private final ControllerAudioHapticsController controllerAudioHapticsController;
+    private final SharedPreferences.OnSharedPreferenceChangeListener mutePreferenceListener;
 
     private AudioTrack track;
     private volatile boolean backgrounded;
+    private volatile boolean audioMuted;
+    private volatile boolean phoneAudioHapticsEnabled;
+    private volatile boolean controllerAudioHapticsEnabled;
 
     public AndroidAudioRenderer(Context context, ControllerHandler controllerHandler, boolean enableAudioFx,
                                 boolean enableAudioHaptics, int audioHapticsStrength,
                                 String audioHapticsVoiceFilterMode,
                                 String audioHapticsOutputTarget) {
         this.context = context;
+        this.sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
+        this.audioMuted = this.sharedPreferences.getBoolean(PREF_AUDIO_MUTE, false);
+        this.mutePreferenceListener = (prefs, key) -> {
+            if (key == null || PREF_AUDIO_MUTE.equals(key)) {
+                this.audioMuted = prefs.getBoolean(PREF_AUDIO_MUTE, false);
+            }
+        };
+        this.sharedPreferences.registerOnSharedPreferenceChangeListener(this.mutePreferenceListener);
         this.enableAudioFx = enableAudioFx;
         this.audioHapticsOutputTarget = audioHapticsOutputTarget;
         this.phoneAudioHapticsController = new AudioHapticsController(context,
@@ -39,6 +55,8 @@ public class AndroidAudioRenderer implements AudioRenderer {
         this.controllerAudioHapticsController = new ControllerAudioHapticsController(controllerHandler,
                 enableAudioHaptics && "controller".equals(audioHapticsOutputTarget),
                 audioHapticsStrength, audioHapticsVoiceFilterMode);
+        this.phoneAudioHapticsEnabled = this.phoneAudioHapticsController.isEnabled();
+        this.controllerAudioHapticsEnabled = this.controllerAudioHapticsController.isEnabled();
     }
 
     private AudioTrack createAudioTrack(int channelConfig, int sampleRate, int bufferSize, boolean lowLatency) {
@@ -209,9 +227,15 @@ public class AndroidAudioRenderer implements AudioRenderer {
             return;
         }
 
-        phoneAudioHapticsController.onAudioFrame(audioData);
-        controllerAudioHapticsController.onAudioFrame(audioData);
-        if(PreferenceManager.getDefaultSharedPreferences(context).getBoolean("ax_audio_mute",false))return;
+        if (phoneAudioHapticsEnabled) {
+            phoneAudioHapticsController.onAudioFrame(audioData);
+        }
+        if (controllerAudioHapticsEnabled) {
+            controllerAudioHapticsController.onAudioFrame(audioData);
+        }
+        if (audioMuted) {
+            return;
+        }
         // Only queue up to 40 ms of pending audio data in addition to what AudioTrack is buffering for us.
         if (MoonBridge.getPendingAudioDuration() < 40) {
             // This will block until the write is completed. That can cause a backlog
@@ -251,6 +275,7 @@ public class AndroidAudioRenderer implements AudioRenderer {
 
     @Override
     public void cleanup() {
+        sharedPreferences.unregisterOnSharedPreferenceChangeListener(mutePreferenceListener);
         phoneAudioHapticsController.stop();
         controllerAudioHapticsController.stop();
         // Immediately drop all pending data
@@ -271,6 +296,8 @@ public class AndroidAudioRenderer implements AudioRenderer {
                 strengthPercent, voiceFilterMode);
         controllerAudioHapticsController.setSettings(enabled && "controller".equals(resolvedTarget),
                 strengthPercent, voiceFilterMode);
+        phoneAudioHapticsEnabled = phoneAudioHapticsController.isEnabled();
+        controllerAudioHapticsEnabled = controllerAudioHapticsController.isEnabled();
     }
 
     public boolean hasRecentPhoneAudioHapticsOutput() {
