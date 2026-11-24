@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2213,
+    "versionCode": 2214,
     "versionName": "26.11.07",
-    "commit": "276081be971176241490b2b7217a643aa1a79db2",
-    "size": 12513483,
-    "sha256": "8dd1fda723e8de5f1515aae5581ab733e719d905caf6085f261904560d450612",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2213/axixi-2213.apk",
-    "notes": "Avoid QTI SW-fence/picture-order vendor keys causing double C2Work and output delay inflation"
+    "commit": "1e9c24ef77f7dcd444c8ca5a9ce106d6bc27db1d",
+    "size": 12517579,
+    "sha256": "541e96fb37900ae0183982da22578afe051a08f50a5382dfdbba89b1c0e0734c",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2214/axixi-2214.apk",
+    "notes": "Fix One UI taskbar bottom-edge touch, 5G frame-gap IDR guard, and stream hot paths"
   },
   "history": [
+    {
+      "versionCode": 2213,
+      "versionName": "26.11.07",
+      "commit": "276081be971176241490b2b7217a643aa1a79db2",
+      "size": 12513483,
+      "sha256": "8dd1fda723e8de5f1515aae5581ab733e719d905caf6085f261904560d450612",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2213/axixi-2213.apk",
+      "notes": "Avoid QTI SW-fence/picture-order vendor keys causing double C2Work and output delay inflation"
+    },
     {
       "versionCode": 2212,
       "versionName": "26.11.07",
