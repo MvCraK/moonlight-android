@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2207,
+    "versionCode": 2208,
     "versionName": "26.11.07",
-    "commit": "b49fdf91a83c2e39dab6fb8748a241ae554f7d9c",
-    "size": 12366027,
-    "sha256": "27c6e776c28aac02fae9f9a2de5063ca05514232db1a98f33524fee354172922",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2207/axixi-2207.apk",
-    "notes": "fix(voice): flush SS TCP handshake and send Fn wake byte"
+    "commit": "2f51a4771a9ea81326f659b5101843375e50a0e3",
+    "size": 12370123,
+    "sha256": "bfc76346a788f6db40bd40f03b535714fff82aa147ea172a92cbe43ef7a8d991",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2208/axixi-2208.apk",
+    "notes": "ext-ss-network: batch recvmmsg, zero-copy UDP decrypt, raise MTU packet size to 1168"
   },
   "history": [
+    {
+      "versionCode": 2207,
+      "versionName": "26.11.07",
+      "commit": "b49fdf91a83c2e39dab6fb8748a241ae554f7d9c",
+      "size": 12366027,
+      "sha256": "27c6e776c28aac02fae9f9a2de5063ca05514232db1a98f33524fee354172922",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2207/axixi-2207.apk",
+      "notes": "fix(voice): flush SS TCP handshake and send Fn wake byte"
+    },
     {
       "versionCode": 2206,
       "versionName": "26.11.07",
