@@ -201,13 +201,15 @@ pub unsafe extern "C" fn vss_udp_encrypt(
     total as isize
 }
 
-/// Decrypts a datagram in place and moves its payload to the start of `buf`.
-/// Returns the payload length and the original IPv4 sender, or -1 to drop it.
+/// Decrypts a datagram in place without moving the payload.
+/// On success, writes the payload byte offset within `buf` to `*offset`,
+/// the original IPv4 sender to `*ip` / `*port`, and returns the payload length.
 #[no_mangle]
-pub unsafe extern "C" fn vss_udp_decrypt(
+pub unsafe extern "C" fn vss_udp_decrypt_view(
     node: *const UdpNode,
     buf: *mut u8,
     len: usize,
+    offset: *mut usize,
     ip: *mut u32,
     port: *mut u16,
 ) -> isize {
@@ -227,8 +229,27 @@ pub unsafe extern "C" fn vss_udp_decrypt(
     }
     *ip = u32::from_be_bytes(plain[1..5].try_into().unwrap());
     *port = u16::from_be_bytes([plain[5], plain[6]]);
-    let payload = plain.len() - 7;
-    let start = salt_len + 7;
+    *offset = salt_len + 7;
+    (plain.len() - 7) as isize
+}
+
+/// Decrypts a datagram in place and moves its payload to the start of `buf`.
+/// Returns the payload length and the original IPv4 sender, or -1 to drop it.
+#[no_mangle]
+pub unsafe extern "C" fn vss_udp_decrypt(
+    node: *const UdpNode,
+    buf: *mut u8,
+    len: usize,
+    ip: *mut u32,
+    port: *mut u16,
+) -> isize {
+    let mut start = 0usize;
+    let payload = vss_udp_decrypt_view(node, buf, len, &mut start, ip, port);
+    if payload < 0 {
+        return -1;
+    }
+    let payload = payload as usize;
+    let packet = slice::from_raw_parts_mut(buf, len);
     packet.copy_within(start..start + payload, 0);
     payload as isize
 }
@@ -468,5 +489,79 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    #[test]
+    fn udp_decrypt_view_roundtrip_and_rejects_bad_packet() {
+        for method in [
+            CipherKind::AES_128_GCM,
+            CipherKind::AES_256_GCM,
+            CipherKind::CHACHA20_POLY1305,
+        ] {
+            let ep = Endpoint {
+                config: ServerConfig::new(loopback(1), "test-secret-key", method).unwrap(),
+                tfo: false,
+            };
+            let node = UdpNode::new(&ep);
+            let node_ptr: *const UdpNode = &*node;
+            let payload: Vec<u8> = (0..1168).map(|i| (i * 31) as u8).collect();
+            let mut wire = vec![0u8; payload.len() + node.overhead()];
+            let wire_len = unsafe {
+                vss_udp_encrypt(
+                    node_ptr,
+                    0x0a010114,
+                    47998,
+                    payload.as_ptr(),
+                    payload.len(),
+                    wire.as_mut_ptr(),
+                    wire.len(),
+                )
+            };
+            assert_eq!(wire_len as usize, wire.len());
+
+            let (mut off, mut ip, mut port) = (0usize, 0u32, 0u16);
+            let plain_len = unsafe {
+                vss_udp_decrypt_view(
+                    node_ptr,
+                    wire.as_mut_ptr(),
+                    wire.len(),
+                    &mut off,
+                    &mut ip,
+                    &mut port,
+                )
+            };
+            assert_eq!(plain_len as usize, payload.len());
+            assert_eq!(off, method.salt_len() + 7);
+            assert_eq!((ip, port), (0x0a010114, 47998));
+            assert_eq!(&wire[off..off + payload.len()], &payload[..]);
+
+            // Tampered ciphertext must fail authentication.
+            let mut tampered = vec![0u8; wire.len()];
+            unsafe {
+                vss_udp_encrypt(
+                    node_ptr,
+                    0x0a010114,
+                    47998,
+                    payload.as_ptr(),
+                    payload.len(),
+                    tampered.as_mut_ptr(),
+                    tampered.len(),
+                );
+            }
+            tampered[method.salt_len() + 10] ^= 0x55;
+            assert_eq!(
+                unsafe {
+                    vss_udp_decrypt_view(
+                        node_ptr,
+                        tampered.as_mut_ptr(),
+                        tampered.len(),
+                        &mut off,
+                        &mut ip,
+                        &mut port,
+                    )
+                },
+                -1
+            );
+        }
     }
 }

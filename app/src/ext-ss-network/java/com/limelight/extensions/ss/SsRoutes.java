@@ -380,7 +380,8 @@ public final class SsRoutes {
         }
         if (!routed(resolved)) return;
         context.negotiatedRemoteStreaming = StreamConfiguration.STREAM_CFG_REMOTE;
-        context.negotiatedPacketSize = Math.min(maxPacketSize, 1024);
+        // 1168 B payload + 28 B RTP/NV + 55 B SS aes-256-gcm + 28 B IP/UDP = 1279 B (< 1280 B MTU floor)
+        context.negotiatedPacketSize = Math.min(maxPacketSize, 1168);
     }
 
     public static boolean routed(InetAddress addr) {

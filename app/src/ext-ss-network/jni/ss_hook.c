@@ -11,6 +11,9 @@
 // import slots (GOT), so the upstream native code and build stay untouched.
 // Only libmoonlight-core is patched; this library and the Rust relay call libc
 // directly.
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 #include <arpa/inet.h>
 #include <elf.h>
 #include <errno.h>
@@ -25,6 +28,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -37,18 +41,38 @@ extern intptr_t vss_udp_encrypt(const void *node, uint32_t ip, uint16_t port,
                                 const void *data, size_t len, void *out, size_t cap);
 extern intptr_t vss_udp_decrypt(const void *node, void *buf, size_t len,
                                 uint32_t *ip, uint16_t *port);
+extern intptr_t vss_udp_decrypt_view(const void *node, void *buf, size_t len,
+                                     size_t *offset, uint32_t *ip, uint16_t *port);
 
 #define MAX_FLOW_FD 4096
 #define SCRATCH_SIZE 65536
 #define SEND_STACK 2048
+#define RECV_BATCH_CAP 16
+#define RECV_SLOT_SIZE 2048
+
+#if defined(__linux__) || defined(__ANDROID__)
+#define HAVE_RECVMMSG_BATCH 1
+struct recv_slot {
+    struct sockaddr_in from;
+    unsigned char data[RECV_SLOT_SIZE];
+};
+#endif
 
 struct flow {
     const void *node;
     uint32_t prefix;             // destination /24 this socket was bound to
     struct sockaddr_in server;
     size_t overhead;
-    pthread_mutex_t recv_lock;   // guards scratch; one receiver per socket in practice
+    pthread_mutex_t recv_lock;   // guards scratch and batch ring; one receiver per socket in practice
     unsigned char *scratch;
+#ifdef HAVE_RECVMMSG_BATCH
+    struct recv_slot *batch;
+    struct mmsghdr *msgs;
+    struct iovec *iovs;
+    int batch_head;
+    int batch_count;
+    int batch_state;             // 0 = uninitialized, 1 = enabled, -1 = disabled
+#endif
 };
 
 static atomic_bool enabled;
@@ -94,6 +118,11 @@ static struct flow *flow_of(int fd) {
 static void free_flow(struct flow *f) {
     vss_udp_release(f->node);
     pthread_mutex_destroy(&f->recv_lock);
+#ifdef HAVE_RECVMMSG_BATCH
+    free(f->batch);
+    free(f->msgs);
+    free(f->iovs);
+#endif
     free(f->scratch);
     free(f);
 }
@@ -223,11 +252,11 @@ static bool nonblocking(int fd, int flags) {
 }
 
 
-// Receives one datagram from the SS server into f->scratch and decrypts it.
-// Datagrams that aren't valid SS replies are dropped as if they never arrived.
+// Receives one datagram from the SS server into f->scratch and decrypts it in place
+// without shifting payload bytes. Writes the payload byte offset in f->scratch to *out_off.
 // Caller holds f->recv_lock. Returns plaintext length, or -1 with errno set.
 static ssize_t recv_direct(int fd, struct flow *f, int flags, struct sockaddr_in *source,
-                           void *control, socklen_t *controllen) {
+                           void *control, socklen_t *controllen, size_t *out_off) {
     flags &= ~MSG_TRUNC;
     for (;;) {
         struct sockaddr_in from;
@@ -243,11 +272,13 @@ static ssize_t recv_direct(int fd, struct flow *f, int flags, struct sockaddr_in
                 from.sin_port == f->server.sin_port && from.sin_addr.s_addr == f->server.sin_addr.s_addr) {
             uint32_t ip;
             uint16_t port;
-            intptr_t plain = vss_udp_decrypt(f->node, f->scratch, (size_t)n, &ip, &port);
+            size_t off = 0;
+            intptr_t plain = vss_udp_decrypt_view(f->node, f->scratch, (size_t)n, &off, &ip, &port);
             if (plain >= 0) {
                 if (controllen) *controllen = hdr.msg_controllen;
                 *source = (struct sockaddr_in){.sin_family = AF_INET, .sin_port = htons(port),
                                                .sin_addr.s_addr = htonl(ip)};
+                *out_off = off;
                 atomic_fetch_add_explicit(&received_bytes, (uint64_t)plain, memory_order_relaxed);
                 return plain;
             }
@@ -264,13 +295,108 @@ static void fill_source(const struct sockaddr_in *src, struct sockaddr *peer, so
     *len = sizeof(*src);
 }
 
+#ifdef HAVE_RECVMMSG_BATCH
+// Batch receive is enabled only for blocking SO_RCVTIMEO sockets (VideoStream/AudioStream
+// with useSelect == false) so poll()-gated sockets can never observe an empty kernel queue
+// while decrypted datagrams sit buffered in user space.
+static bool ensure_batch_ready(int fd, struct flow *f) {
+    if (f->batch_state != 0) return f->batch_state > 0;
+    struct timeval tv = {0, 0};
+    socklen_t tvlen = sizeof(tv);
+    int fl = fcntl(fd, F_GETFL);
+    bool timed_blocking = (fl >= 0 && !(fl & O_NONBLOCK)) &&
+            getsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, &tvlen) == 0 &&
+            (tv.tv_sec > 0 || tv.tv_usec > 0);
+    if (!timed_blocking) {
+        f->batch_state = -1;
+        return false;
+    }
+    struct recv_slot *batch = malloc(RECV_BATCH_CAP * sizeof(*batch));
+    struct mmsghdr *msgs = calloc(RECV_BATCH_CAP, sizeof(*msgs));
+    struct iovec *iovs = calloc(RECV_BATCH_CAP, sizeof(*iovs));
+    if (!batch || !msgs || !iovs) {
+        free(batch);
+        free(msgs);
+        free(iovs);
+        f->batch_state = -1;
+        return false;
+    }
+    f->batch = batch;
+    f->msgs = msgs;
+    f->iovs = iovs;
+    f->batch_head = 0;
+    f->batch_count = 0;
+    f->batch_state = 1;
+    return true;
+}
+
+static ssize_t recvfrom_batched(int fd, struct flow *f, void *buf, size_t n, int flags,
+                                struct sockaddr_in *source) {
+    for (;;) {
+        while (f->batch_head < f->batch_count) {
+            int idx = f->batch_head++;
+            struct recv_slot *slot = &f->batch[idx];
+            struct msghdr *hdr = &f->msgs[idx].msg_hdr;
+            if (hdr->msg_flags & MSG_TRUNC) continue;
+            if (hdr->msg_namelen >= sizeof(slot->from) &&
+                    slot->from.sin_family == AF_INET &&
+                    slot->from.sin_port == f->server.sin_port &&
+                    slot->from.sin_addr.s_addr == f->server.sin_addr.s_addr) {
+                uint32_t ip;
+                uint16_t port;
+                size_t off = 0;
+                intptr_t plain = vss_udp_decrypt_view(
+                        f->node, slot->data, (size_t)f->msgs[idx].msg_len, &off, &ip, &port);
+                if (plain >= 0) {
+                    size_t copy = (size_t)plain < n ? (size_t)plain : n;
+                    if (copy > 0) memcpy(buf, slot->data + off, copy);
+                    *source = (struct sockaddr_in){.sin_family = AF_INET, .sin_port = htons(port),
+                                                   .sin_addr.s_addr = htonl(ip)};
+                    atomic_fetch_add_explicit(&received_bytes, (uint64_t)plain, memory_order_relaxed);
+                    return (!(flags & MSG_TRUNC) && (size_t)plain > n) ? (ssize_t)n : plain;
+                }
+            }
+        }
+        for (int i = 0; i < RECV_BATCH_CAP; i++) {
+            f->iovs[i].iov_base = f->batch[i].data;
+            f->iovs[i].iov_len = RECV_SLOT_SIZE;
+            f->msgs[i].msg_hdr.msg_name = &f->batch[i].from;
+            f->msgs[i].msg_hdr.msg_namelen = sizeof(f->batch[i].from);
+            f->msgs[i].msg_hdr.msg_iov = &f->iovs[i];
+            f->msgs[i].msg_hdr.msg_iovlen = 1;
+            f->msgs[i].msg_hdr.msg_control = NULL;
+            f->msgs[i].msg_hdr.msg_controllen = 0;
+            f->msgs[i].msg_hdr.msg_flags = 0;
+            f->msgs[i].msg_len = 0;
+        }
+        // MSG_WAITFORONE blocks for the first datagram (honoring SO_RCVTIMEO), then
+        // drains any additional queued datagrams immediately without blocking.
+        int got = recvmmsg(fd, f->msgs, RECV_BATCH_CAP, MSG_WAITFORONE, NULL);
+        if (got < 0) return -1;
+        if (got == 0) continue;
+        f->batch_head = 0;
+        f->batch_count = got;
+    }
+}
+#endif
+
 static ssize_t recvfrom_direct(int fd, struct flow *f, void *buf, size_t n, int flags,
                                struct sockaddr *peer, socklen_t *len) {
     struct sockaddr_in src;
     pthread_mutex_lock(&f->recv_lock);
-    ssize_t plain = recv_direct(fd, f, flags, &src, NULL, NULL);
+#ifdef HAVE_RECVMMSG_BATCH
+    if ((flags & ~MSG_TRUNC) == 0 && ensure_batch_ready(fd, f)) {
+        ssize_t plain = recvfrom_batched(fd, f, buf, n, flags, &src);
+        if (plain >= 0) fill_source(&src, peer, len);
+        pthread_mutex_unlock(&f->recv_lock);
+        return plain;
+    }
+#endif
+    size_t off = 0;
+    ssize_t plain = recv_direct(fd, f, flags, &src, NULL, NULL, &off);
     if (plain >= 0) {
-        memcpy(buf, f->scratch, (size_t)plain < n ? (size_t)plain : n);
+        size_t copy = (size_t)plain < n ? (size_t)plain : n;
+        if (copy > 0) memcpy(buf, f->scratch + off, copy);
         fill_source(&src, peer, len);
         if (!(flags & MSG_TRUNC) && (size_t)plain > n) plain = (ssize_t)n;
     }
@@ -283,8 +409,9 @@ static ssize_t ss_recvmsg(int fd, struct msghdr *msg, int flags) {
     if (!f) return recvmsg(fd, msg, flags);
     struct sockaddr_in src;
     socklen_t controllen = msg->msg_controllen;
+    size_t base_off = 0;
     pthread_mutex_lock(&f->recv_lock);
-    ssize_t plain = recv_direct(fd, f, flags, &src, msg->msg_control, &controllen);
+    ssize_t plain = recv_direct(fd, f, flags, &src, msg->msg_control, &controllen, &base_off);
     if (plain >= 0) {
         msg->msg_controllen = controllen;
         msg->msg_flags = 0;
@@ -292,7 +419,7 @@ static ssize_t ss_recvmsg(int fd, struct msghdr *msg, int flags) {
         for (size_t i = 0; i < (size_t)msg->msg_iovlen && off < (size_t)plain; i++) {
             size_t chunk = msg->msg_iov[i].iov_len;
             if (chunk > (size_t)plain - off) chunk = (size_t)plain - off;
-            memcpy(msg->msg_iov[i].iov_base, f->scratch + off, chunk);
+            memcpy(msg->msg_iov[i].iov_base, f->scratch + base_off + off, chunk);
             off += chunk;
         }
         if (off < (size_t)plain) {
