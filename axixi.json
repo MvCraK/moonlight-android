@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2211,
+    "versionCode": 2212,
     "versionName": "26.11.07",
-    "commit": "6392888a83d1c00b672bd7dba9fff3003a47ee3f",
+    "commit": "b030c11695bcea9f165c20d63a31f8c8f109910f",
     "size": 12513483,
-    "sha256": "e9c050ac614641a5431656693b142f258114b1fc777dd1f0e718233d56e36be6",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2211/axixi-2211.apk",
-    "notes": "Optimize SS 2022 UDP zero-copy hot path and boost native media thread priorities"
+    "sha256": "a82ce98c7e64a49f27772326d07bafb396ac577ef4748ce5ba8eb492446cb285",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2212/axixi-2212.apk",
+    "notes": "Enable realtime MediaCodec priority, safe vendor probing, and SS worker priority"
   },
   "history": [
+    {
+      "versionCode": 2211,
+      "versionName": "26.11.07",
+      "commit": "6392888a83d1c00b672bd7dba9fff3003a47ee3f",
+      "size": 12513483,
+      "sha256": "e9c050ac614641a5431656693b142f258114b1fc777dd1f0e718233d56e36be6",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2211/axixi-2211.apk",
+      "notes": "Optimize SS 2022 UDP zero-copy hot path and boost native media thread priorities"
+    },
     {
       "versionCode": 2210,
       "versionName": "26.11.07",
