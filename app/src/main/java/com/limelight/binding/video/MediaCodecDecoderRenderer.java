@@ -63,6 +63,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
 
     private int nextInputBufferIndex = -1;
     private ByteBuffer nextInputBuffer;
+    private int lastDirectAcquireStatus = DIRECT_ACQUIRE_FALLBACK;
+    private long pendingDirectTimestampUs;
+    private int pendingDirectCodecFlags;
+    private int pendingDirectBasePos;
 
     private Context context;
     private Activity activity;
@@ -402,6 +406,10 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
 
         if (hevcDecoder != null) {
+            if (!directSubmit && MediaCodecHelper.decoderCanDirectSubmit(hevcDecoder.getName())) {
+                directSubmit = true;
+                LimeLog.info("Decoder "+hevcDecoder.getName()+" will use direct submit");
+            }
             refFrameInvalidationHevc = MediaCodecHelper.decoderSupportsRefFrameInvalidationHevc(hevcDecoder);
             hevcOptimalSlicesPerFrame = MediaCodecHelper.getDecoderOptimalSlicesPerFrame(hevcDecoder.getName());
 
@@ -1120,7 +1128,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         }
 
         // We use a separate thread to avoid any main thread delays from delaying rendering
-        choreographerHandlerThread = new HandlerThread("Video - Choreographer", Process.THREAD_PRIORITY_DEFAULT + Process.THREAD_PRIORITY_MORE_FAVORABLE);
+        choreographerHandlerThread = new HandlerThread("Video - Choreographer", Process.THREAD_PRIORITY_URGENT_DISPLAY);
         choreographerHandlerThread.start();
 
         // Start the frame callbacks
@@ -1138,6 +1146,7 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
         rendererThread = new Thread() {
             @Override
             public void run() {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_DISPLAY);
                 BufferInfo info = new BufferInfo();
                 while (!stopping) {
                     try {
@@ -1928,6 +1937,242 @@ public class MediaCodecDecoderRenderer extends VideoDecoderRenderer implements C
             return MoonBridge.DR_NEED_IDR;
         }
 
+        return MoonBridge.DR_OK;
+    }
+
+    @Override
+    public ByteBuffer acquireDirectInputBuffer(int decodeUnitLength, int frameNumber, int frameType,
+                                               char frameHostProcessingLatency, long receiveTimeMs,
+                                               long enqueueTimeMs) {
+        if (stopping || !foreground) {
+            lastDirectAcquireStatus = MoonBridge.DR_OK;
+            return null;
+        }
+
+        if (resumeNeedsIdr) {
+            if (frameType != MoonBridge.FRAME_TYPE_IDR) {
+                lastDirectAcquireStatus = MoonBridge.DR_NEED_IDR;
+                return null;
+            }
+            resumeNeedsIdr = false;
+            lastFrameNumber = 0;
+        }
+
+        if (lastFrameNumber == 0) {
+            activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();
+        } else if (frameNumber != lastFrameNumber && frameNumber != lastFrameNumber + 1) {
+            activeWindowVideoStats.framesLost += frameNumber - lastFrameNumber - 1;
+            activeWindowVideoStats.totalFrames += frameNumber - lastFrameNumber - 1;
+            activeWindowVideoStats.frameLossEvents++;
+        }
+
+        if (lastFrameNumber != frameNumber && frameType == MoonBridge.FRAME_TYPE_IDR) {
+            vpsBuffers.clear();
+            spsBuffers.clear();
+            ppsBuffers.clear();
+        }
+
+        lastFrameNumber = frameNumber;
+
+        if (SystemClock.uptimeMillis() >= activeWindowVideoStats.measurementStartTimestamp + 1000) {
+            if (prefs.enablePerfOverlay || prefs.enableStreamSessionLogging) {
+                VideoStats lastTwo = new VideoStats();
+                lastTwo.add(lastWindowVideoStats);
+                lastTwo.add(activeWindowVideoStats);
+                VideoStatsFps fps = lastTwo.getFps();
+                String decoder;
+
+                String video_format = "";
+                if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0) {
+                    video_format = "HDR ";
+                }
+                if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H264) != 0) {
+                    decoder = avcDecoder.getName();
+                    video_format += "H264";
+                } else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_H265) != 0) {
+                    decoder = hevcDecoder.getName();
+                    video_format += "HEVC";
+                } else if ((videoFormat & MoonBridge.VIDEO_FORMAT_MASK_AV1) != 0) {
+                    decoder = av1Decoder.getName();
+                    video_format += "AV1";
+                } else {
+                    decoder = "(unknown)";
+                    video_format += "???";
+                }
+
+                float decodeTimeMs = lastTwo.decoderTimeSamples > 0
+                        ? (float)lastTwo.decoderTimeUs / 1000f / lastTwo.decoderTimeSamples
+                        : -1f;
+                long rttInfo = MoonBridge.getEstimatedRttInfo();
+                long now = SystemClock.uptimeMillis();
+                float audioRateKbps = estimateAudioRateKbps();
+                if (firstPerfStatsTimestamp == 0) {
+                    firstPerfStatsTimestamp = now;
+                }
+
+                PerfOverlayStats stats = new PerfOverlayStats();
+                stats.width = initialWidth;
+                stats.height = initialHeight;
+                stats.targetBitrateKbps = prefs.bitrate;
+                stats.targetFps = prefs.fps;
+                stats.totalFps = fps.totalFps;
+                stats.receivedFps = fps.receivedFps;
+                stats.renderedFps = fps.renderedFps;
+                stats.frameLossPercent = lastTwo.totalFrames > 0
+                        ? (float)lastTwo.framesLost / lastTwo.totalFrames * 100
+                        : 0f;
+                stats.packetLossPercent = stats.frameLossPercent;
+                stats.networkLatencyMs = (int)(rttInfo >> 32);
+                stats.networkLatencyVarianceMs = (int)rttInfo;
+                stats.decodeTimeMs = decodeTimeMs;
+                stats.hostProcessingLatencyMs = lastTwo.framesWithHostProcessingLatency > 0
+                        ? (float)lastTwo.totalHostProcessingLatency / 10 / lastTwo.framesWithHostProcessingLatency
+                        : 0f;
+                stats.audioRateKbps = audioRateKbps;
+                long elapsedMs = Math.max(0, now - firstPerfStatsTimestamp);
+                long videoBytes = globalVideoStats.videoBytes + activeWindowVideoStats.videoBytes;
+                stats.audioBytes = Math.max(0, (long)(audioRateKbps * 1000f / 8f * elapsedMs / 1000f));
+                stats.videoBytes = Math.max(0, videoBytes);
+                stats.totalNetworkBytes = stats.videoBytes + stats.audioBytes;
+                long statsElapsedMs = Math.max(1, now - lastTwo.measurementStartTimestamp);
+                stats.videoRateKbps = lastTwo.videoBytes * 8f / statsElapsedMs;
+                stats.networkRateKbps = stats.videoRateKbps;
+                stats.hdr = (videoFormat & MoonBridge.VIDEO_FORMAT_MASK_10BIT) != 0;
+                stats.codecName = video_format;
+                stats.decoderName = decoder;
+
+                VideoStats cumulativeStats = new VideoStats();
+                cumulativeStats.add(globalVideoStats);
+                cumulativeStats.add(activeWindowVideoStats);
+                stats.framesReceived = cumulativeStats.totalFramesReceived;
+                stats.framesRendered = cumulativeStats.totalFramesRendered;
+                stats.framesLost = cumulativeStats.framesLost;
+                stats.frameLossEvents = cumulativeStats.frameLossEvents;
+
+                perfListener.onPerfUpdate(stats);
+            }
+
+            globalVideoStats.add(activeWindowVideoStats);
+            lastWindowVideoStats.copy(activeWindowVideoStats);
+            activeWindowVideoStats.clear();
+            activeWindowVideoStats.measurementStartTimestamp = SystemClock.uptimeMillis();
+        }
+
+        boolean csdSubmittedForThisFrame = false;
+        if (frameType == MoonBridge.FRAME_TYPE_IDR &&
+                (videoFormat & (MoonBridge.VIDEO_FORMAT_MASK_H264 | MoonBridge.VIDEO_FORMAT_MASK_H265)) != 0) {
+            if (!submittedCsd || !fusedIdrFrame) {
+                if (!fetchNextInputBuffer()) {
+                    lastDirectAcquireStatus = MoonBridge.DR_NEED_IDR;
+                    return null;
+                }
+                for (byte[] vpsBuffer : vpsBuffers) {
+                    nextInputBuffer.put(vpsBuffer);
+                }
+                for (byte[] spsBuffer : spsBuffers) {
+                    nextInputBuffer.put(spsBuffer);
+                }
+                for (byte[] ppsBuffer : ppsBuffers) {
+                    nextInputBuffer.put(ppsBuffer);
+                }
+                if (!queueNextInputBuffer(0, MediaCodec.BUFFER_FLAG_CODEC_CONFIG)) {
+                    lastDirectAcquireStatus = MoonBridge.DR_NEED_IDR;
+                    return null;
+                }
+                csdSubmittedForThisFrame = true;
+                submittedCsd = true;
+                if (needsBaselineSpsHack) {
+                    needsBaselineSpsHack = false;
+                    if (!replaySps()) {
+                        lastDirectAcquireStatus = MoonBridge.DR_NEED_IDR;
+                        return null;
+                    }
+                    LimeLog.info("SPS replay complete");
+                }
+            }
+        }
+
+        if (frameHostProcessingLatency != 0) {
+            if (activeWindowVideoStats.minHostProcessingLatency != 0) {
+                activeWindowVideoStats.minHostProcessingLatency = (char) Math.min(activeWindowVideoStats.minHostProcessingLatency, frameHostProcessingLatency);
+            } else {
+                activeWindowVideoStats.minHostProcessingLatency = frameHostProcessingLatency;
+            }
+            activeWindowVideoStats.framesWithHostProcessingLatency += 1;
+        }
+        activeWindowVideoStats.maxHostProcessingLatency = (char) Math.max(activeWindowVideoStats.maxHostProcessingLatency, frameHostProcessingLatency);
+        activeWindowVideoStats.totalHostProcessingLatency += frameHostProcessingLatency;
+
+        activeWindowVideoStats.totalFramesReceived++;
+        activeWindowVideoStats.totalFrames++;
+        activeWindowVideoStats.videoBytes += decodeUnitLength;
+
+        if (!FRAME_RENDER_TIME_ONLY) {
+            activeWindowVideoStats.totalTimeMs += enqueueTimeMs - receiveTimeMs;
+        }
+
+        long timestampUs = getMonotonicTimeUs();
+        if (!fetchNextInputBuffer()) {
+            lastDirectAcquireStatus = MoonBridge.DR_NEED_IDR;
+            return null;
+        }
+
+        int codecFlags = 0;
+        if (frameType == MoonBridge.FRAME_TYPE_IDR) {
+            codecFlags |= MediaCodec.BUFFER_FLAG_SYNC_FRAME;
+            if (fusedIdrFrame && !csdSubmittedForThisFrame) {
+                for (byte[] vpsBuffer : vpsBuffers) {
+                    nextInputBuffer.put(vpsBuffer);
+                }
+                for (byte[] spsBuffer : spsBuffers) {
+                    nextInputBuffer.put(spsBuffer);
+                }
+                for (byte[] ppsBuffer : ppsBuffers) {
+                    nextInputBuffer.put(ppsBuffer);
+                }
+            }
+        }
+
+        if (timestampUs <= lastTimestampUs) {
+            timestampUs = lastTimestampUs + 1;
+        }
+        lastTimestampUs = timestampUs;
+
+        numFramesIn++;
+
+        if (decodeUnitLength > nextInputBuffer.limit() - nextInputBuffer.position()) {
+            IllegalArgumentException exception = new IllegalArgumentException(
+                    "Decode unit length "+decodeUnitLength+" too large for input buffer "+nextInputBuffer.limit());
+            if (!reportedCrash) {
+                reportedCrash = true;
+                crashListener.notifyCrash(exception);
+            }
+            throw new RendererException(this, exception);
+        }
+
+        if (!nextInputBuffer.isDirect()) {
+            lastDirectAcquireStatus = DIRECT_ACQUIRE_FALLBACK;
+            return null;
+        }
+
+        pendingDirectTimestampUs = timestampUs;
+        pendingDirectCodecFlags = codecFlags;
+        pendingDirectBasePos = nextInputBuffer.position();
+        lastDirectAcquireStatus = MoonBridge.DR_OK;
+        return pendingDirectBasePos == 0 ? nextInputBuffer : nextInputBuffer.slice();
+    }
+
+    @Override
+    public int getLastDirectAcquireStatus() {
+        return lastDirectAcquireStatus;
+    }
+
+    @Override
+    public int commitDirectInputBuffer(int writtenLength) {
+        nextInputBuffer.position(pendingDirectBasePos + writtenLength);
+        if (!queueNextInputBuffer(pendingDirectTimestampUs, pendingDirectCodecFlags)) {
+            return MoonBridge.DR_NEED_IDR;
+        }
         return MoonBridge.DR_OK;
     }
 

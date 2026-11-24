@@ -22,6 +22,9 @@ static jmethodID BridgeDrStartMethod;
 static jmethodID BridgeDrStopMethod;
 static jmethodID BridgeDrCleanupMethod;
 static jmethodID BridgeDrSubmitDecodeUnitMethod;
+static jmethodID BridgeDrAcquireDirectInputBufferMethod;
+static jmethodID BridgeDrGetDirectAcquireStatusMethod;
+static jmethodID BridgeDrCommitDirectInputBufferMethod;
 static jmethodID BridgeArInitMethod;
 static jmethodID BridgeArStartMethod;
 static jmethodID BridgeArStopMethod;
@@ -89,6 +92,9 @@ Java_com_limelight_nvstream_jni_MoonBridge_init(JNIEnv *env, jclass clazz) {
     BridgeDrStopMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrStop", "()V");
     BridgeDrCleanupMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrCleanup", "()V");
     BridgeDrSubmitDecodeUnitMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrSubmitDecodeUnit", "([BIIIICJJ)I");
+    BridgeDrAcquireDirectInputBufferMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrAcquireDirectInputBuffer", "(IIICJJ)Ljava/nio/ByteBuffer;");
+    BridgeDrGetDirectAcquireStatusMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrGetDirectAcquireStatus", "()I");
+    BridgeDrCommitDirectInputBufferMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeDrCommitDirectInputBuffer", "(I)I");
     BridgeArInitMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeArInit", "(III)I");
     BridgeArStartMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeArStart", "()V");
     BridgeArStopMethod = (*env)->GetStaticMethodID(env, clazz, "bridgeArStop", "()V");
@@ -153,22 +159,18 @@ int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
     JNIEnv* env = GetThreadEnv();
     int ret;
 
-    // Increase the size of our frame data buffer if our frame won't fit
-    if ((*env)->GetArrayLength(env, DecodedFrameBuffer) < decodeUnit->fullLength) {
-        (*env)->DeleteGlobalRef(env, DecodedFrameBuffer);
-        DecodedFrameBuffer = (*env)->NewGlobalRef(env, (*env)->NewByteArray(env, decodeUnit->fullLength));
-    }
-
     PLENTRY currentEntry;
-    int offset;
+    int picDataLength = 0;
 
+    // Pass 1: submit parameter set NALUs (VPS/SPS/PPS) via the byte[] path and compute
+    // total BUFFER_TYPE_PICDATA length for the zero-copy direct ByteBuffer fast path.
     currentEntry = decodeUnit->bufferList;
-    offset = 0;
     while (currentEntry != NULL) {
-        // Submit parameter set NALUs separately from picture data
         if (currentEntry->bufferType != BUFFER_TYPE_PICDATA) {
-            // Use the beginning of the buffer each time since this is a separate
-            // invocation of the decoder each time.
+            if ((*env)->GetArrayLength(env, DecodedFrameBuffer) < currentEntry->length) {
+                (*env)->DeleteGlobalRef(env, DecodedFrameBuffer);
+                DecodedFrameBuffer = (*env)->NewGlobalRef(env, (*env)->NewByteArray(env, currentEntry->length));
+            }
             (*env)->SetByteArrayRegion(env, DecodedFrameBuffer, 0, currentEntry->length, (jbyte*)currentEntry->data);
 
             ret = (*env)->CallStaticIntMethod(env, GlobalBridgeClass, BridgeDrSubmitDecodeUnitMethod,
@@ -177,7 +179,6 @@ int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
                                               (jlong)(decodeUnit->receiveTimeUs / 1000),
                                               (jlong)(decodeUnit->enqueueTimeUs / 1000));
             if ((*env)->ExceptionCheck(env)) {
-                // We will crash here
                 (*JVM)->DetachCurrentThread(JVM);
                 return DR_OK;
             }
@@ -186,10 +187,71 @@ int BridgeDrSubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
             }
         }
         else {
+            picDataLength += currentEntry->length;
+        }
+
+        currentEntry = currentEntry->next;
+    }
+
+    // Pass 2: zero-copy direct write straight into MediaCodec's native input ByteBuffer.
+    jobject directBuf = (*env)->CallStaticObjectMethod(env, GlobalBridgeClass, BridgeDrAcquireDirectInputBufferMethod,
+                                                       picDataLength, decodeUnit->frameNumber, decodeUnit->frameType,
+                                                       (jchar)decodeUnit->frameHostProcessingLatency,
+                                                       (jlong)(decodeUnit->receiveTimeUs / 1000),
+                                                       (jlong)(decodeUnit->enqueueTimeUs / 1000));
+    if ((*env)->ExceptionCheck(env)) {
+        (*JVM)->DetachCurrentThread(JVM);
+        return DR_OK;
+    }
+    if (directBuf != NULL) {
+        uint8_t* dst = (uint8_t*)(*env)->GetDirectBufferAddress(env, directBuf);
+        jlong cap = (*env)->GetDirectBufferCapacity(env, directBuf);
+        if (dst != NULL && cap >= (jlong)picDataLength) {
+            int offset = 0;
+            currentEntry = decodeUnit->bufferList;
+            while (currentEntry != NULL) {
+                if (currentEntry->bufferType == BUFFER_TYPE_PICDATA) {
+                    memcpy(dst + offset, currentEntry->data, (size_t)currentEntry->length);
+                    offset += currentEntry->length;
+                }
+                currentEntry = currentEntry->next;
+            }
+            (*env)->DeleteLocalRef(env, directBuf);
+
+            ret = (*env)->CallStaticIntMethod(env, GlobalBridgeClass, BridgeDrCommitDirectInputBufferMethod, offset);
+            if ((*env)->ExceptionCheck(env)) {
+                (*JVM)->DetachCurrentThread(JVM);
+                return DR_OK;
+            }
+            return ret;
+        }
+        (*env)->DeleteLocalRef(env, directBuf);
+    }
+    else {
+        int status = (*env)->CallStaticIntMethod(env, GlobalBridgeClass, BridgeDrGetDirectAcquireStatusMethod);
+        if ((*env)->ExceptionCheck(env)) {
+            (*JVM)->DetachCurrentThread(JVM);
+            return DR_OK;
+        }
+        // -999 (DIRECT_ACQUIRE_FALLBACK) requests fallback to legacy byte[] submission.
+        if (status != -999) {
+            return status;
+        }
+    }
+
+    // Legacy byte[] fallback path (pre-Lollipop or non-direct ByteBuffer).
+    if ((*env)->GetArrayLength(env, DecodedFrameBuffer) < picDataLength) {
+        (*env)->DeleteGlobalRef(env, DecodedFrameBuffer);
+        DecodedFrameBuffer = (*env)->NewGlobalRef(env, (*env)->NewByteArray(env, picDataLength));
+    }
+
+    int offset = 0;
+    currentEntry = decodeUnit->bufferList;
+    while (currentEntry != NULL) {
+        if (currentEntry->bufferType == BUFFER_TYPE_PICDATA) {
             (*env)->SetByteArrayRegion(env, DecodedFrameBuffer, offset, currentEntry->length, (jbyte*)currentEntry->data);
             offset += currentEntry->length;
         }
-
         currentEntry = currentEntry->next;
     }
 

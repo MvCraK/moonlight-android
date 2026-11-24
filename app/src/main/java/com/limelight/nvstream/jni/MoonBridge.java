@@ -241,6 +241,31 @@ public class MoonBridge {
         }
     }
 
+    public static java.nio.ByteBuffer bridgeDrAcquireDirectInputBuffer(int decodeUnitLength,
+                                                                       int frameNumber, int frameType,
+                                                                       char frameHostProcessingLatency,
+                                                                       long receiveTimeMs, long enqueueTimeMs) {
+        if (videoRenderer != null) {
+            return videoRenderer.acquireDirectInputBuffer(decodeUnitLength, frameNumber, frameType,
+                    frameHostProcessingLatency, receiveTimeMs, enqueueTimeMs);
+        }
+        return null;
+    }
+
+    public static int bridgeDrGetDirectAcquireStatus() {
+        if (videoRenderer != null) {
+            return videoRenderer.getLastDirectAcquireStatus();
+        }
+        return DR_OK;
+    }
+
+    public static int bridgeDrCommitDirectInputBuffer(int writtenLength) {
+        if (videoRenderer != null) {
+            return videoRenderer.commitDirectInputBuffer(writtenLength);
+        }
+        return DR_OK;
+    }
+
     public static int bridgeArInit(int audioConfiguration, int sampleRate, int samplesPerFrame) {
         if (audioRenderer != null) {
             return audioRenderer.setup(new AudioConfiguration(audioConfiguration), sampleRate, samplesPerFrame);
