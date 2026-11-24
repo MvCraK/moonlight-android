@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2212,
+    "versionCode": 2213,
     "versionName": "26.11.07",
-    "commit": "b030c11695bcea9f165c20d63a31f8c8f109910f",
+    "commit": "276081be971176241490b2b7217a643aa1a79db2",
     "size": 12513483,
-    "sha256": "a82ce98c7e64a49f27772326d07bafb396ac577ef4748ce5ba8eb492446cb285",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2212/axixi-2212.apk",
-    "notes": "Enable realtime MediaCodec priority, safe vendor probing, and SS worker priority"
+    "sha256": "8dd1fda723e8de5f1515aae5581ab733e719d905caf6085f261904560d450612",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2213/axixi-2213.apk",
+    "notes": "Avoid QTI SW-fence/picture-order vendor keys causing double C2Work and output delay inflation"
   },
   "history": [
+    {
+      "versionCode": 2212,
+      "versionName": "26.11.07",
+      "commit": "b030c11695bcea9f165c20d63a31f8c8f109910f",
+      "size": 12513483,
+      "sha256": "a82ce98c7e64a49f27772326d07bafb396ac577ef4748ce5ba8eb492446cb285",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2212/axixi-2212.apk",
+      "notes": "Enable realtime MediaCodec priority, safe vendor probing, and SS worker priority"
+    },
     {
       "versionCode": 2211,
       "versionName": "26.11.07",
