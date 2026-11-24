@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2209,
+    "versionCode": 2210,
     "versionName": "26.11.07",
-    "commit": "28137f189d335c4525f1fc14d88aa993e564fc68",
-    "size": 12370123,
-    "sha256": "ba8847871ec283528f3c5a9ac983c9775fd959ff11f2606c7efe920bec387ed8",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2209/axixi-2209.apk",
-    "notes": "perf(video): zero-copy MediaCodec JNI, URGENT_DISPLAY threads, disable 5G speculative RFI"
+    "commit": "c85f5f9acf6e6f6ca49b35424aa701a362f407b0",
+    "size": 12509387,
+    "sha256": "599eeeac35be5bb677785f9f666236dc7c584f377af2ef1c25ca1fd31292d622",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2210/axixi-2210.apk",
+    "notes": "ext-ss-network: support Shadowsocks 2022 (2022-blake3-aes-128/256-gcm, chacha20) with per-socket session caching"
   },
   "history": [
+    {
+      "versionCode": 2209,
+      "versionName": "26.11.07",
+      "commit": "28137f189d335c4525f1fc14d88aa993e564fc68",
+      "size": 12370123,
+      "sha256": "ba8847871ec283528f3c5a9ac983c9775fd959ff11f2606c7efe920bec387ed8",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2209/axixi-2209.apk",
+      "notes": "perf(video): zero-copy MediaCodec JNI, URGENT_DISPLAY threads, disable 5G speculative RFI"
+    },
     {
       "versionCode": 2208,
       "versionName": "26.11.07",
