@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2206,
+    "versionCode": 2207,
     "versionName": "26.11.07",
-    "commit": "f96b1abb349c13f1c26ed9650d678a767347f921",
+    "commit": "b49fdf91a83c2e39dab6fb8748a241ae554f7d9c",
     "size": 12366027,
-    "sha256": "8f3f119bda4bc099bd1c1d5698c0560f86ba534eddf91a526dad46328830e2e1",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2206/axixi-2206.apk",
-    "notes": "ci(sync): report upstream conflicts instead of pushing topic branch"
+    "sha256": "27c6e776c28aac02fae9f9a2de5063ca05514232db1a98f33524fee354172922",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2207/axixi-2207.apk",
+    "notes": "fix(voice): flush SS TCP handshake and send Fn wake byte"
   },
   "history": [
+    {
+      "versionCode": 2206,
+      "versionName": "26.11.07",
+      "commit": "f96b1abb349c13f1c26ed9650d678a767347f921",
+      "size": 12366027,
+      "sha256": "8f3f119bda4bc099bd1c1d5698c0560f86ba534eddf91a526dad46328830e2e1",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2206/axixi-2206.apk",
+      "notes": "ci(sync): report upstream conflicts instead of pushing topic branch"
+    },
     {
       "versionCode": 2205,
       "versionName": "26.11.07",
