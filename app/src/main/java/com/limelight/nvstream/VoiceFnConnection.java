@@ -28,6 +28,12 @@ final class VoiceFnConnection {
         socket.connect(new InetSocketAddress(address, port), 2500);
         socket.setSoTimeout(2500);
         socket.setTcpNoDelay(true);
+        // Send a 1-byte wake byte (0x00) before reading the server nonce so proxies/relays
+        // that defer upstream connect until the first application payload byte (e.g. Shadowsocks)
+        // always open the upstream connection to Mac FnControl immediately.
+        OutputStream output = socket.getOutputStream();
+        output.write(0);
+        output.flush();
         DataInputStream input = new DataInputStream(socket.getInputStream());
         byte[] challenge = new byte[17];
         input.readFully(challenge, 0, 16);
@@ -38,7 +44,8 @@ final class VoiceFnConnection {
         response[0] = challenge[16];
         System.arraycopy(mac.doFinal(challenge), 0, response, 1, 32);
         if (cancelled.get()) throw new IOException("已取消");
-        socket.getOutputStream().write(response);
+        output.write(response);
+        output.flush();
         int ack = input.read();
         if (ack == 2) throw new IOException("请在 Mac 系统设置的「隐私与安全性 → 辅助功能」允许 StarCore Pro");
         if (ack != 1) throw new IOException("Mac 未确认 Fn 操作");

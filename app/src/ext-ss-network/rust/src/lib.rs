@@ -20,7 +20,12 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
-use tokio::{io::copy_bidirectional, net::TcpListener, runtime::Runtime, time::timeout};
+use tokio::{
+    io::{copy_bidirectional, AsyncWriteExt},
+    net::TcpListener,
+    runtime::Runtime,
+    time::timeout,
+};
 
 #[derive(Deserialize)]
 struct Node {
@@ -281,6 +286,17 @@ fn forward_tcp(ip: u32, port: u16, source: u16) -> Option<u16> {
         else {
             return;
         };
+        // Flush the SS handshake (Salt + target addr) immediately so server-speaks-first
+        // protocols (e.g. VoiceFnConnection / FnControl) receive the server greeting
+        // instead of deadlocking on lazy client-speaks-first connect.
+        if timeout(Duration::from_secs(10), proxy.write(&[]))
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .is_none()
+        {
+            return;
+        }
         let _ = copy_bidirectional(&mut client, &mut proxy).await;
     });
     Some(local)
@@ -304,9 +320,15 @@ mod tests {
         serde_json::json!({"server":"127.0.0.1","port":port,"cipher":"aes-256-gcm","password":key})
     }
 
+    fn test_lock() -> &'static tokio::sync::Mutex<()> {
+        static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+    }
+
     // Distinct listeners and keys make swapping either home subscription observable.
     #[tokio::test(flavor = "multi_thread")]
     async fn split_routes_preserve_destinations_and_return_traffic() {
+        let _guard = test_lock().lock().await;
         timeout(Duration::from_secs(10), async {
             let server = Context::new_shared(ServerType::Server);
             let mut nodes = Vec::new();
@@ -388,6 +410,61 @@ mod tests {
             }
             assert!(unsafe { vss_config(std::ptr::null()) });
             assert_eq!(vss_open_tcp(0x0a000050, 50301, 44000), 0);
+        })
+        .await
+        .unwrap();
+    }
+
+    // Server-speaks-first protocols (like VoiceFnConnection reading a 16-byte nonce before
+    // writing anything) must receive the server banner without timing out.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn server_speaks_first_over_tcp_relay() {
+        let _guard = test_lock().lock().await;
+        timeout(Duration::from_secs(10), async {
+            let server = Context::new_shared(ServerType::Server);
+            let mut nodes = Vec::new();
+            let mut server_task = None;
+            for slot in 0..3 {
+                let key = format!("ssf-test-{slot}");
+                let mut config =
+                    ServerConfig::new(loopback(0), &key, CipherKind::AES_256_GCM).unwrap();
+                let tcp = ProxyListener::bind(server.clone(), &config).await.unwrap();
+                let addr = tcp.local_addr().unwrap();
+                config.set_addr(addr);
+                nodes.push(node_json(addr.port(), &key));
+                if slot == 2 {
+                    server_task = Some(tokio::spawn(async move {
+                        let (mut stream, _) = tcp.accept().await.unwrap();
+                        assert_eq!(stream.handshake().await.unwrap().to_string(), "10.1.1.10:55123");
+                        // Immediately send 16-byte nonce BEFORE reading any client bytes!
+                        let nonce = [0xab_u8; 16];
+                        stream.write_all(&nonce).await.unwrap();
+                        let mut reply = [0_u8; 4];
+                        stream.read_exact(&mut reply).await.unwrap();
+                        assert_eq!(&reply, b"ack!");
+                        stream.write_all(&[1_u8]).await.unwrap();
+                    }));
+                }
+            }
+            let json = std::ffi::CString::new(serde_json::to_vec(&nodes).unwrap()).unwrap();
+            assert!(unsafe { vss_config(json.as_ptr()) });
+
+            let client = TcpSocket::new_v4().unwrap();
+            client.bind(loopback(0)).unwrap();
+            let port = vss_open_tcp(0x0a01010a, 55123, client.local_addr().unwrap().port());
+            assert_ne!(port, 0);
+            let mut stream = client.connect(loopback(port)).await.unwrap();
+            // Read 16-byte nonce BEFORE writing a single byte!
+            let mut got = [0_u8; 16];
+            stream.read_exact(&mut got).await.unwrap();
+            assert_eq!(got, [0xab_u8; 16]);
+            stream.write_all(b"ack!").await.unwrap();
+            let mut ack = [0_u8; 1];
+            stream.read_exact(&mut ack).await.unwrap();
+            assert_eq!(ack, [1_u8]);
+
+            server_task.unwrap().await.unwrap();
+            assert!(unsafe { vss_config(std::ptr::null()) });
         })
         .await
         .unwrap();
