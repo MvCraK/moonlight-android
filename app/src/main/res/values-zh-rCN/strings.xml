@@ -825,8 +825,6 @@
     <string name="title_crown_config_management">管理 Crown 配置</string>
     <string name="summary_crown_config_management">创建、选择、导入、导出或合并屏幕控制与触控配置。</string>
     <string name="summary_crown_config_management_with_count">%1$d 套配置可切换</string>
-    <string name="title_crown_edit_current">编辑当前布局</string>
-    <string name="summary_crown_edit_current">打开「我的王冠」管理当前布局。</string>
     <string name="summary_crown_enabled_state">%1$s · %2$d 个控件 · 已适配当前串流</string>
     <string name="summary_crown_current_profile">启用王冠输入时使用的配置。</string>
     <string name="summary_crown_current_profile_empty">还没有选择王冠配置。</string>
@@ -1452,7 +1450,6 @@
     <string name="layout_item_key_value_text_0952a">分区 1</string>
     <string name="layout_item_key_value_hint_dd44f">分区名称，为空时为键值名</string>
     <string name="layout_item_page_super_menu_text_ce0e8">编辑模式</string>
-    <string name="layout_keyboard_mini_text_3ae7b">返回键盘</string>
     <string name="layout_number_seekbar_text_e12e7">鼠标透传灵敏度</string>
     <string name="layout_page_analog_stick_text_dedb8">类型 : 手柄摇杆</string>
     <string name="layout_page_analog_stick_text_34170">摇杆</string>
@@ -2470,7 +2467,6 @@
     <string name="float_ball_summary_delay">%1$s 秒后隐藏</string>
     <string name="float_ball_summary_no_hide">始终显示</string>
     <string name="float_ball_summary_custom_position">已拖动定位</string>
-    <string name="float_ball_summary_search">%1$s\n包含：%2$s</string>
     <string name="toast_crown_config_export_failed">无法导出 Crown 配置</string>
     <string name="toast_crown_config_export_success">已导出 Crown 配置</string>
     <string name="toast_crown_config_import_failed">无法读取 Crown 配置</string>

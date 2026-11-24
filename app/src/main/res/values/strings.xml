@@ -915,8 +915,6 @@
     <string name="title_crown_config_management">Manage Crown profiles</string>
     <string name="summary_crown_config_management">Create, select, import, export, or merge on-screen control and touch profiles.</string>
     <string name="summary_crown_config_management_with_count">%1$d profiles ready to switch</string>
-    <string name="title_crown_edit_current">Edit current layout</string>
-    <string name="summary_crown_edit_current">Open My Crowns to manage the active layout.</string>
     <string name="summary_crown_enabled_state">%1$s · %2$d controls · ready for the current stream</string>
     <string name="summary_crown_current_profile">The profile used when Crown input is enabled.</string>
     <string name="summary_crown_current_profile_empty">No Crown profile selected yet.</string>
@@ -1804,7 +1802,6 @@ Tap again to replace it.</string>
     <string name="layout_page_device_text_dsc">DS5 Touchpad</string>
     <string name="layout_page_device_text_mmo_true_text">Mouse movement only</string>
     <string name="layout_page_device_text_mmo_false_text">Mouse movement + click</string>
-    <string name="layout_keyboard_mini_text_3ae7b">Back to Keyboard</string>
     <string name="layout_number_seekbar_text_e12e7">Mouse Passthrough Sensitivity</string>
     <string name="layout_page_analog_stick_text_dedb8">Type: Analog Stick</string>
     <string name="layout_page_analog_stick_text_34170">Stick</string>
@@ -2557,7 +2554,6 @@ Tap again to replace it.</string>
     <string name="float_ball_summary_delay">Hide after %1$s s</string>
     <string name="float_ball_summary_no_hide">Always visible</string>
     <string name="float_ball_summary_custom_position">Dragged position</string>
-    <string name="float_ball_summary_search">%1$s\nIncludes: %2$s</string>
     <string name="display_resolution_current_not_saved">Currently in use · Not saved in list</string>
     <!-- Previously hard-coded strings -->
     <string name="pacing_label_precise_sync_enhanced">Precise sync (enhanced)</string>
