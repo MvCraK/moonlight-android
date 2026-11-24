@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2210,
+    "versionCode": 2211,
     "versionName": "26.11.07",
-    "commit": "c85f5f9acf6e6f6ca49b35424aa701a362f407b0",
-    "size": 12509387,
-    "sha256": "599eeeac35be5bb677785f9f666236dc7c584f377af2ef1c25ca1fd31292d622",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2210/axixi-2210.apk",
-    "notes": "ext-ss-network: support Shadowsocks 2022 (2022-blake3-aes-128/256-gcm, chacha20) with per-socket session caching"
+    "commit": "6392888a83d1c00b672bd7dba9fff3003a47ee3f",
+    "size": 12513483,
+    "sha256": "e9c050ac614641a5431656693b142f258114b1fc777dd1f0e718233d56e36be6",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2211/axixi-2211.apk",
+    "notes": "Optimize SS 2022 UDP zero-copy hot path and boost native media thread priorities"
   },
   "history": [
+    {
+      "versionCode": 2210,
+      "versionName": "26.11.07",
+      "commit": "c85f5f9acf6e6f6ca49b35424aa701a362f407b0",
+      "size": 12509387,
+      "sha256": "599eeeac35be5bb677785f9f666236dc7c584f377af2ef1c25ca1fd31292d622",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2210/axixi-2210.apk",
+      "notes": "ext-ss-network: support Shadowsocks 2022 (2022-blake3-aes-128/256-gcm, chacha20) with per-socket session caching"
+    },
     {
       "versionCode": 2209,
       "versionName": "26.11.07",
