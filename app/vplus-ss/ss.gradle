@@ -11,6 +11,9 @@ android.sourceSets.main {
     res.srcDirs += "${ssRoot}/res"
     jniLibs.srcDirs += ssLibs.get().asFile
 }
+android.buildTypes.all {
+    proguardFile "${ssRoot}/proguard-ss.pro"
+}
 
 def buildShadowsocks = tasks.register('buildShadowsocks', Exec) {
     inputs.files(fileTree("${ssRoot}/rust") { exclude 'target/**' })

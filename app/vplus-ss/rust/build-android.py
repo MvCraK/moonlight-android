@@ -39,4 +39,4 @@ for abi in sys.argv[4:]:
     shutil.copyfile(cargo_dir / target / "release/libvplus_ss.so", out / "libvplus_ss.so")
     subprocess.run([cc, "-shared", "-fPIC", "-O2", "-Wall", "-Werror", page,
                     "-Wl,-soname,libvplus_ss_jni.so", "-o", str(out / "libvplus_ss_jni.so"),
-                    str(hook_source), "-L" + str(out), "-lvplus_ss"], check=True)
+                    str(hook_source), "-L" + str(out), "-lvplus_ss", "-ldl"], check=True)

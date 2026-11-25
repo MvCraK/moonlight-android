@@ -5,8 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import android.text.format.Formatter
 import androidx.activity.ComponentDialog
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,14 +41,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -95,7 +96,13 @@ class SsPanel private constructor(private val activity: Activity) {
         val enabled: Boolean = SsRoutes.enabled,
         val configured: Boolean = SsRoutes.configured(),
         val status: SsRoutes.Status = SsRoutes.status(),
-        val nodes: List<Pair<String, Int>> = SsRoutes.nodes(),
+        val homeMode: SsRoutes.HomeMode = SsRoutes.homeMode(),
+        val hasDirect: Boolean = SsRoutes.hasDirectHomeNodes(),
+        val hasRelay: Boolean = SsRoutes.hasRelayHomeNodes(),
+        val hasSubs: Boolean = SsRoutes.hasSubscriptionUrls(),
+        val vpnActive: Boolean = SsRoutes.isSystemVpnActive(),
+        val hasBypass: Boolean = SsRoutes.hasBypassNetwork(),
+        val nodes: List<SsRoutes.Node> = SsRoutes.nodes(),
         val probes: List<SsRoutes.Probe>? = SsRoutes.probes,
         val probing: Boolean = SsRoutes.probing,
         val updated: Long = SsRoutes.updated(),
@@ -103,13 +110,15 @@ class SsPanel private constructor(private val activity: Activity) {
 
     private var dialog: ComponentDialog? = null
     private var busy by mutableStateOf<Int?>(null)      // progress message while working
-    private var failed by mutableStateOf(false)
+    private var notice by mutableStateOf<String?>(null) // sanitized error or partial-import warning
+    private var noticeIsError by mutableStateOf(false)
     private var revision by mutableIntStateOf(0)        // bumps when SsRoutes changes
 
     fun show() {
         if (activity.isFinishing || activity.isDestroyed) return
         if (dialog?.isShowing == true) return
-        failed = false
+        notice = null
+        noticeIsError = false
         val view = ComposeView(activity).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             setContent { Panel() }
@@ -130,8 +139,8 @@ class SsPanel private constructor(private val activity: Activity) {
     fun import(uri: Uri) {
         perform(R.string.ss_busy_import) {
             val config = activity.contentResolver.openInputStream(uri)?.use { SsRoutes.readText(it) }
-                ?: error("无法打开文件")
-            SsRoutes.refresh(config)
+                ?: error("cannot open file")
+            SsRoutes.refresh(activity, config)
         }
         show()
     }
@@ -153,16 +162,32 @@ class SsPanel private constructor(private val activity: Activity) {
         fragment.startActivityForResult(intent, IMPORT)
     }
 
-    private fun perform(progress: Int, task: () -> Unit) {
+    private fun selectHomeMode(mode: SsRoutes.HomeMode) {
+        if (busy != null || mode == SsRoutes.homeMode()) return
+        perform(R.string.ss_busy_switch_mode) {
+            SsRoutes.setHomeMode(mode)
+            null
+        }
+    }
+
+    private fun perform(progress: Int, task: () -> String?) {
         if (busy != null) return
         busy = progress
-        failed = false
+        notice = null
+        noticeIsError = false
         SsRoutes.worker.execute {
-            val result = runCatching(task)
+            var resultNotice: String? = null
+            var isError = false
+            try {
+                resultNotice = task()
+            } catch (t: Throwable) {
+                resultNotice = SsRoutes.describeError(activity, t)
+                isError = true
+            }
             activity.runOnUiThread {
                 busy = null
-                // Network/parser exceptions can contain the subscription URL or raw YAML.
-                failed = result.isFailure
+                notice = resultNotice
+                noticeIsError = isError
                 revision++
             }
         }
@@ -179,6 +204,7 @@ class SsPanel private constructor(private val activity: Activity) {
         val enabled = snap.enabled
         val configured = snap.configured
         val status = snap.status
+        val homeMode = snap.homeMode
         var received by remember { mutableStateOf(SsNative.ssReceivedBytes()) }
         LaunchedEffect(enabled) {
             while (enabled) {
@@ -193,6 +219,8 @@ class SsPanel private constructor(private val activity: Activity) {
         val input = colorResource(R.color.easytier_input_background)
         val textPrimary = colorResource(R.color.easytier_text_primary)
         val textSecondary = colorResource(R.color.easytier_text_secondary)
+        val online = colorResource(R.color.ss_status_online)
+        val warning = colorResource(R.color.easytier_warning)
         val primary = if (panel.luminance() > 0.5f) lerp(accent, Color.Black, 0.3f) else accent
         val statusColor = statusColor(status)
 
@@ -210,17 +238,61 @@ class SsPanel private constructor(private val activity: Activity) {
                             StatusBadge(status)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(stringResource(R.string.ss_panel_title), color = textPrimary,
-                                    fontSize = 20.sp, fontWeight = FontWeight.Bold)
                                 Text(
-                                    stringResource(if (!configured) R.string.ss_state_unconfigured else stateLabel(status)),
+                                    stringResource(R.string.ss_panel_title),
+                                    color = textPrimary,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                val baseState = stringResource(
+                                    if (!configured) R.string.ss_state_unconfigured else stateLabel(status)
+                                )
+                                val stateLine = if (configured && enabled) {
+                                    val modeShort = stringResource(
+                                        if (homeMode == SsRoutes.HomeMode.RELAY) R.string.ss_mode_relay_short
+                                        else R.string.ss_mode_direct_short
+                                    )
+                                    "$baseState · $modeShort"
+                                } else {
+                                    baseState
+                                }
+                                Text(
+                                    stateLine,
                                     color = if (status == SsRoutes.Status.OFF) textSecondary else statusColor,
-                                    fontSize = 12.5.sp, fontWeight = FontWeight.Medium
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                             CloseButton(input, textPrimary) { dismiss() }
                         }
-                        Spacer(Modifier.height(16.dp))
+
+                        // System VPN / FlClash coexistence banner
+                        if (snap.vpnActive) {
+                            Spacer(Modifier.height(12.dp))
+                            val (bannerRes, bannerColor) = when {
+                                !enabled -> R.string.ss_vpn_banner_off to accent
+                                snap.hasBypass -> R.string.ss_vpn_banner_bypass to online
+                                else -> R.string.ss_vpn_banner_no_bypass to warning
+                            }
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = AppShapes.small,
+                                color = bannerColor.copy(alpha = 0.14f),
+                                border = BorderStroke(1.dp, bannerColor.copy(alpha = 0.4f))
+                            ) {
+                                Text(
+                                    stringResource(bannerRes),
+                                    color = bannerColor,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(12.dp))
 
                         Column(
                             Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
@@ -228,20 +300,69 @@ class SsPanel private constructor(private val activity: Activity) {
                         ) {
                             if (!configured) {
                                 Card(section) {
-                                    Text(stringResource(R.string.ss_empty_title), color = textPrimary,
-                                        fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        stringResource(R.string.ss_empty_title),
+                                        color = textPrimary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                     Spacer(Modifier.height(6.dp))
                                     Text(stringResource(R.string.ss_empty_body), color = textSecondary, fontSize = 13.sp)
                                 }
                             } else {
+                                // Home route mode selector
+                                Column {
+                                    Text(
+                                        stringResource(R.string.ss_section_home_mode),
+                                        color = textSecondary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(start = 2.dp, bottom = 6.dp)
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        ModeSegment(
+                                            modifier = Modifier.weight(1f),
+                                            title = stringResource(R.string.ss_mode_direct),
+                                            subtitle = stringResource(
+                                                if (snap.hasDirect) R.string.ss_mode_direct_sub
+                                                else R.string.ss_mode_unconfigured
+                                            ),
+                                            selected = homeMode == SsRoutes.HomeMode.DIRECT,
+                                            available = snap.hasDirect,
+                                            interactive = busy == null,
+                                            accent = accent,
+                                            section = section,
+                                            textPrimary = textPrimary,
+                                            textSecondary = textSecondary,
+                                            onClick = { selectHomeMode(SsRoutes.HomeMode.DIRECT) }
+                                        )
+                                        ModeSegment(
+                                            modifier = Modifier.weight(1f),
+                                            title = stringResource(R.string.ss_mode_relay),
+                                            subtitle = stringResource(
+                                                if (snap.hasRelay) R.string.ss_mode_relay_sub
+                                                else R.string.ss_mode_unconfigured
+                                            ),
+                                            selected = homeMode == SsRoutes.HomeMode.RELAY,
+                                            available = snap.hasRelay,
+                                            interactive = busy == null,
+                                            accent = accent,
+                                            section = section,
+                                            textPrimary = textPrimary,
+                                            textSecondary = textSecondary,
+                                            onClick = { selectHomeMode(SsRoutes.HomeMode.RELAY) }
+                                        )
+                                    }
+                                }
+
+                                // Active nodes card
                                 Card(section, stringResource(R.string.ss_section_nodes), textSecondary) {
-                                    val names = listOf(R.string.ss_node_home_tcp, R.string.ss_node_home_udp, R.string.ss_node_company)
                                     val probes = snap.probes
-                                    snap.nodes.forEachIndexed { i, (host, port) ->
+                                    snap.nodes.forEachIndexed { i, node ->
                                         if (i > 0) Spacer(Modifier.height(10.dp))
                                         NodeRow(
-                                            name = stringResource(names.getOrElse(i) { R.string.ss_node_company }),
-                                            host = "$host:$port",
+                                            name = stringResource(node.labelRes),
+                                            host = "${node.host}:${node.port}",
                                             probe = probes?.getOrNull(i),
                                             enabled = enabled,
                                             probing = snap.probing,
@@ -251,64 +372,185 @@ class SsPanel private constructor(private val activity: Activity) {
                                     }
                                 }
 
+                                // Routes summary card
                                 Card(section, stringResource(R.string.ss_section_routes), textSecondary) {
-                                    RouteRow("10.0.0.0/24", stringResource(R.string.ss_route_home),
-                                        stringResource(R.string.ss_route_home_detail), textPrimary, textSecondary)
+                                    RouteRow(
+                                        "10.0.0.0/24",
+                                        stringResource(R.string.ss_route_home),
+                                        stringResource(
+                                            if (homeMode == SsRoutes.HomeMode.RELAY) R.string.ss_route_home_relay_detail
+                                            else R.string.ss_route_home_detail
+                                        ),
+                                        textPrimary,
+                                        textSecondary
+                                    )
                                     Spacer(Modifier.height(10.dp))
-                                    RouteRow("10.1.1.0/24", stringResource(R.string.ss_route_company),
-                                        stringResource(R.string.ss_route_company_detail), textPrimary, textSecondary)
-                                    Spacer(Modifier.height(10.dp))
+                                    RouteRow(
+                                        "10.1.1.0/24",
+                                        stringResource(R.string.ss_route_company),
+                                        stringResource(R.string.ss_route_company_detail),
+                                        textPrimary,
+                                        textSecondary
+                                    )
+                                    Spacer(Modifier.height(8.dp))
                                     Text(stringResource(R.string.ss_direct_note), color = textSecondary, fontSize = 11.5.sp)
                                 }
 
+                                // Compact stats strip
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Stat(Modifier.weight(1f), section, stringResource(R.string.ss_stat_received),
-                                        Formatter.formatShortFileSize(LocalContext.current, received), textPrimary, textSecondary)
+                                    Stat(
+                                        Modifier.weight(1f),
+                                        section,
+                                        stringResource(R.string.ss_stat_received),
+                                        Formatter.formatShortFileSize(LocalContext.current, received),
+                                        textPrimary,
+                                        textSecondary
+                                    )
                                     val updated = snap.updated
-                                    Stat(Modifier.weight(1f), section, stringResource(R.string.ss_stat_updated),
+                                    Stat(
+                                        Modifier.weight(1f),
+                                        section,
+                                        stringResource(R.string.ss_stat_updated),
                                         if (updated > 0) DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
                                             .format(Date(updated)) else "—",
-                                        textPrimary, textSecondary)
+                                        textPrimary,
+                                        textSecondary
+                                    )
                                 }
                             }
                         }
 
-                        val note = busy?.let { stringResource(it) }
-                            ?: if (failed) stringResource(R.string.ss_error_generic) else null
-                        if (note != null) {
+                        val note = busy?.let { stringResource(it) } ?: notice
+                        if (!note.isNullOrEmpty()) {
                             Spacer(Modifier.height(10.dp))
-                            Text(note, fontSize = 12.5.sp,
-                                color = if (busy != null) textSecondary else colorResource(R.color.easytier_warning))
+                            Text(
+                                note,
+                                fontSize = 12.sp,
+                                color = when {
+                                    busy != null -> textSecondary
+                                    noticeIsError -> warning
+                                    else -> accent
+                                }
+                            )
                         }
 
-                        // Prominent connect / disconnect action at the bottom, like master's panel.
-                        Spacer(Modifier.height(14.dp))
-                        val warning = colorResource(R.color.easytier_warning)
+                        // Secondary actions + prominent primary connect/disconnect CTA at bottom
+                        Spacer(Modifier.height(12.dp))
+                        if (configured) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ActionButton(
+                                    stringResource(R.string.ss_action_import),
+                                    input,
+                                    textPrimary,
+                                    busy == null,
+                                    Modifier.weight(1f),
+                                    ::pickConfig
+                                )
+                                ActionButton(
+                                    stringResource(R.string.ss_action_refresh),
+                                    input,
+                                    textPrimary,
+                                    busy == null && snap.hasSubs,
+                                    Modifier.weight(1f)
+                                ) {
+                                    perform(R.string.ss_busy_refresh) { SsRoutes.refresh(activity) }
+                                }
+                                ActionButton(
+                                    stringResource(R.string.ss_action_probe),
+                                    input,
+                                    textPrimary,
+                                    enabled && !snap.probing,
+                                    Modifier.weight(1f)
+                                ) { SsRoutes.probeAsync(force = true) }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                        }
+
                         val onAccent = colorResource(R.color.app_dialog_text_primary)
                         when {
-                            !configured -> PrimaryButton(stringResource(R.string.ss_action_import), accent, onAccent,
-                                null, busy == null, ::pickConfig)
-                            enabled -> PrimaryButton(stringResource(R.string.ss_action_disconnect),
-                                warning.copy(alpha = 0.12f), warning, BorderStroke(1.dp, warning.copy(alpha = 0.6f)),
-                                busy == null) { perform(R.string.ss_busy_toggle) { SsRoutes.toggle() } }
-                            else -> PrimaryButton(stringResource(R.string.ss_action_connect), accent, onAccent,
-                                null, busy == null) { perform(R.string.ss_busy_toggle) { SsRoutes.toggle() } }
-                        }
-                        if (configured) {
-                            Spacer(Modifier.height(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                ActionButton(stringResource(R.string.ss_action_import), input, textPrimary,
-                                    busy == null, Modifier.weight(1f), ::pickConfig)
-                                ActionButton(stringResource(R.string.ss_action_refresh), input, textPrimary,
-                                    busy == null, Modifier.weight(1f)) {
-                                    perform(R.string.ss_busy_refresh) { SsRoutes.refresh() }
+                            !configured -> PrimaryButton(
+                                stringResource(R.string.ss_action_import),
+                                accent,
+                                onAccent,
+                                null,
+                                busy == null,
+                                ::pickConfig
+                            )
+                            enabled -> PrimaryButton(
+                                stringResource(R.string.ss_action_disconnect),
+                                warning.copy(alpha = 0.12f),
+                                warning,
+                                BorderStroke(1.dp, warning.copy(alpha = 0.6f)),
+                                busy == null
+                            ) {
+                                perform(R.string.ss_busy_toggle) {
+                                    SsRoutes.toggle()
+                                    null
                                 }
-                                ActionButton(stringResource(R.string.ss_action_probe), input, textPrimary,
-                                    enabled && !snap.probing, Modifier.weight(1f)) { SsRoutes.probeAsync(force = true) }
+                            }
+                            else -> PrimaryButton(
+                                stringResource(R.string.ss_action_connect),
+                                accent,
+                                onAccent,
+                                null,
+                                busy == null
+                            ) {
+                                perform(R.string.ss_busy_toggle) {
+                                    SsRoutes.toggle()
+                                    null
+                                }
                             }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    @Composable
+    private fun ModeSegment(
+        modifier: Modifier,
+        title: String,
+        subtitle: String,
+        selected: Boolean,
+        available: Boolean,
+        interactive: Boolean,
+        accent: Color,
+        section: Color,
+        textPrimary: Color,
+        textSecondary: Color,
+        onClick: () -> Unit,
+    ) {
+        val bg = if (selected) accent.copy(alpha = 0.18f) else section
+        val border = if (selected) BorderStroke(1.5.dp, accent.copy(alpha = 0.8f))
+        else BorderStroke(1.dp, textSecondary.copy(alpha = 0.18f))
+        Surface(
+            modifier = modifier
+                .alpha(if (available) 1f else 0.55f)
+                .clip(AppShapes.small)
+                .clickable(enabled = interactive, onClick = onClick)
+                .handleGamepadConfirm { if (interactive) onClick() },
+            shape = AppShapes.small,
+            color = bg,
+            border = border
+        ) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Text(
+                    title,
+                    color = if (selected) accent else textPrimary,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    subtitle,
+                    color = if (selected) textPrimary.copy(alpha = 0.85f) else textSecondary,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -342,16 +584,26 @@ class SsPanel private constructor(private val activity: Activity) {
 
     @Composable
     private fun Card(
-        background: Color, title: String? = null, titleColor: Color = Color.Unspecified,
+        background: Color,
+        title: String? = null,
+        titleColor: Color = Color.Unspecified,
         content: @Composable ColumnScope.() -> Unit
     ) {
         Column {
             if (title != null) {
-                Text(title, color = titleColor, fontSize = 12.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 2.dp, bottom = 6.dp))
+                Text(
+                    title,
+                    color = titleColor,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 2.dp, bottom = 6.dp)
+                )
             }
             Column(
-                Modifier.fillMaxWidth().background(background, AppShapes.small).padding(horizontal = 14.dp, vertical = 12.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .background(background, AppShapes.small)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 content = content
             )
         }
@@ -359,8 +611,13 @@ class SsPanel private constructor(private val activity: Activity) {
 
     @Composable
     private fun NodeRow(
-        name: String, host: String, probe: SsRoutes.Probe?, enabled: Boolean, probing: Boolean,
-        textPrimary: Color, textSecondary: Color
+        name: String,
+        host: String,
+        probe: SsRoutes.Probe?,
+        enabled: Boolean,
+        probing: Boolean,
+        textPrimary: Color,
+        textSecondary: Color
     ) {
         val online = colorResource(R.color.ss_status_online)
         val warning = colorResource(R.color.ss_status_warning)
@@ -380,8 +637,12 @@ class SsPanel private constructor(private val activity: Activity) {
                 Text(host, color = textSecondary, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.width(8.dp))
-            Text(label, color = if (dot == off) textSecondary else dot, fontSize = 13.sp,
-                fontWeight = FontWeight.Bold)
+            Text(
+                label,
+                color = if (dot == off) textSecondary else dot,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 
@@ -389,8 +650,13 @@ class SsPanel private constructor(private val activity: Activity) {
     private fun RouteRow(cidr: String, target: String, detail: String, textPrimary: Color, textSecondary: Color) {
         Column {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(cidr, color = textPrimary, fontSize = 13.5.sp,
-                    fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                Text(
+                    cidr,
+                    color = textPrimary,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
+                )
                 Text(target, color = textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
             Text(detail, color = textSecondary, fontSize = 11.5.sp)
@@ -398,27 +664,46 @@ class SsPanel private constructor(private val activity: Activity) {
     }
 
     @Composable
-    private fun Stat(modifier: Modifier, background: Color, label: String, value: String, textPrimary: Color, textSecondary: Color) {
+    private fun Stat(
+        modifier: Modifier,
+        background: Color,
+        label: String,
+        value: String,
+        textPrimary: Color,
+        textSecondary: Color
+    ) {
         Column(modifier.background(background, AppShapes.small).padding(horizontal = 14.dp, vertical = 10.dp)) {
             Text(label, color = textSecondary, fontSize = 11.5.sp)
             Spacer(Modifier.height(2.dp))
-            Text(value, color = textPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                value,
+                color = textPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 
     @Composable
     private fun PrimaryButton(
-        label: String, container: Color, content: Color, border: BorderStroke?, enabled: Boolean, onClick: () -> Unit
+        label: String,
+        container: Color,
+        content: Color,
+        border: BorderStroke?,
+        enabled: Boolean,
+        onClick: () -> Unit
     ) {
         Button(
             onClick = onClick,
             enabled = enabled,
-            modifier = Modifier.fillMaxWidth().height(48.dp).handleGamepadConfirm { if (enabled) onClick() },
+            modifier = Modifier.fillMaxWidth().height(46.dp).handleGamepadConfirm { if (enabled) onClick() },
             shape = AppShapes.medium,
             border = border,
             colors = ButtonDefaults.buttonColors(
-                containerColor = container, contentColor = content,
+                containerColor = container,
+                contentColor = content,
                 disabledContainerColor = container.copy(alpha = container.alpha * 0.4f),
                 disabledContentColor = content.copy(alpha = 0.5f)
             )
@@ -444,7 +729,12 @@ class SsPanel private constructor(private val activity: Activity) {
 
     @Composable
     private fun ActionButton(
-        label: String, container: Color, content: Color, enabled: Boolean, modifier: Modifier, onClick: () -> Unit
+        label: String,
+        container: Color,
+        content: Color,
+        enabled: Boolean,
+        modifier: Modifier,
+        onClick: () -> Unit
     ) {
         Button(
             onClick = onClick,
@@ -452,8 +742,10 @@ class SsPanel private constructor(private val activity: Activity) {
             modifier = modifier.handleGamepadConfirm { if (enabled) onClick() },
             shape = AppShapes.medium,
             colors = ButtonDefaults.buttonColors(
-                containerColor = container, contentColor = content,
-                disabledContainerColor = container.copy(alpha = 0.4f), disabledContentColor = content.copy(alpha = 0.5f)
+                containerColor = container,
+                contentColor = content,
+                disabledContainerColor = container.copy(alpha = 0.4f),
+                disabledContentColor = content.copy(alpha = 0.5f)
             ),
             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp)
         ) {

@@ -11,6 +11,7 @@ object SsNative {
     /** Redirects libmoonlight-core's socket calls; returns hooked slots, or -1 if not found. */
     @JvmStatic external fun installHooks(): Int
     @JvmStatic external fun setSsRoutes(nodes: ByteArray?): Boolean
+    @JvmStatic external fun setBypassNetHandle(netHandle: Long)
     @JvmStatic external fun ssReceivedBytes(): Long
     @JvmStatic external fun openSsTcp(ipv4: Int, port: Int, localPort: Int): Int
 }
