@@ -21,7 +21,6 @@
     <string name="ss_vpn_banner_bypass">检测到系统 VPN 运行中 · 内置组网已绑定底层网卡绕过 VPN，避免双重代理</string>
     <string name="ss_vpn_banner_no_bypass">检测到系统 VPN 运行中，但未找到可用底层网卡，建议在代理中将 SS 节点设为直连</string>
     <string name="ss_section_nodes">当前生效节点</string>
-    <string name="ss_section_routes">分流规则</string>
     <string name="ss_node_home_tcp">家庭直连 · TCP</string>
     <string name="ss_node_home_udp">家庭直连 · UDP 串流</string>
     <string name="ss_node_home_relay">家庭转发 · TCP/UDP</string>
@@ -33,12 +32,6 @@
     <string name="ss_latency_checking">检测中…</string>
     <string name="ss_latency_idle">—</string>
     <string name="ss_latency_skipped">仅 UDP</string>
-    <string name="ss_route_home">家庭</string>
-    <string name="ss_route_company">公司</string>
-    <string name="ss_route_home_detail">直连模式：TCP 走家庭 TCP 订阅 · UDP 走家庭 UDP 订阅</string>
-    <string name="ss_route_home_relay_detail">公司转发模式：TCP、UDP 均经固定公司转发节点回家</string>
-    <string name="ss_route_company_detail">TCP、UDP 均走公司节点</string>
-    <string name="ss_direct_note">串流 UDP 在 Moonlight 收包线程内零拷贝直接解密，不经过本地中继。</string>
     <string name="ss_stat_received">直连接收</string>
     <string name="ss_stat_updated">订阅更新</string>
     <string name="ss_action_import">导入配置</string>

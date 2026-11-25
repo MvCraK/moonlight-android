@@ -372,30 +372,6 @@ class SsPanel private constructor(private val activity: Activity) {
                                     }
                                 }
 
-                                // Routes summary card
-                                Card(section, stringResource(R.string.ss_section_routes), textSecondary) {
-                                    RouteRow(
-                                        "10.0.0.0/24",
-                                        stringResource(R.string.ss_route_home),
-                                        stringResource(
-                                            if (homeMode == SsRoutes.HomeMode.RELAY) R.string.ss_route_home_relay_detail
-                                            else R.string.ss_route_home_detail
-                                        ),
-                                        textPrimary,
-                                        textSecondary
-                                    )
-                                    Spacer(Modifier.height(10.dp))
-                                    RouteRow(
-                                        "10.1.1.0/24",
-                                        stringResource(R.string.ss_route_company),
-                                        stringResource(R.string.ss_route_company_detail),
-                                        textPrimary,
-                                        textSecondary
-                                    )
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(stringResource(R.string.ss_direct_note), color = textSecondary, fontSize = 11.5.sp)
-                                }
-
                                 // Compact stats strip
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Stat(
@@ -643,23 +619,6 @@ class SsPanel private constructor(private val activity: Activity) {
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
             )
-        }
-    }
-
-    @Composable
-    private fun RouteRow(cidr: String, target: String, detail: String, textPrimary: Color, textSecondary: Color) {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    cidr,
-                    color = textPrimary,
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(target, color = textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-            Text(detail, color = textSecondary, fontSize = 11.5.sp)
         }
     }
 
