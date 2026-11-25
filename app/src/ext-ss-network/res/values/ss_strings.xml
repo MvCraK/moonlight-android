@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [ADDED] -->
 <resources>
+    <string name="ss_toolbar">SS network</string>
     <string name="ss_toolbar_state">SS network: %1$s</string>
     <string name="ss_panel_title">SS network</string>
     <string name="ss_state_off">Off</string>
@@ -10,11 +11,25 @@
     <string name="ss_state_degraded">On · some nodes unreachable</string>
     <string name="ss_state_unconfigured">Not configured</string>
     <string name="ss_empty_title">No network config yet</string>
-    <string name="ss_empty_body">Import a config file with the home TCP/UDP subscriptions and the company node to route 10.0.0.0/24 and 10.1.1.0/24 through SS.</string>
-    <string name="ss_section_nodes">Nodes</string>
+    <string name="ss_empty_body">Import a JSON config with home direct subscriptions (optional), fixed home company relay (optional), and the company node to route 10.0.0.0/24 and 10.1.1.0/24 through SS.</string>
+    <string name="ss_section_home_mode">Home route (10.0.0.0/24)</string>
+    <string name="ss_mode_direct">Direct (Sub)</string>
+    <string name="ss_mode_direct_short">Home direct</string>
+    <string name="ss_mode_direct_sub">Dynamic ports via subscriptions</string>
+    <string name="ss_mode_relay">Company relay</string>
+    <string name="ss_mode_relay_short">Company relay</string>
+    <string name="ss_mode_relay_sub">Fixed host &amp; port · no sub needed</string>
+    <string name="ss_mode_unconfigured">Not configured</string>
+    <string name="ss_vpn_banner_off">System VPN / proxy active · SS is off, traffic uses system proxy</string>
+    <string name="ss_vpn_banner_bypass">System VPN active · SS binds underlying network to avoid double-tunneling</string>
+    <string name="ss_vpn_banner_no_bypass">System VPN active with no physical fallback · set SS nodes DIRECT in your VPN</string>
+    <string name="ss_section_nodes">Active nodes</string>
     <string name="ss_section_routes">Routes</string>
-    <string name="ss_node_home_tcp">Home · TCP</string>
-    <string name="ss_node_home_udp">Home · UDP stream</string>
+    <string name="ss_node_home_tcp">Home direct · TCP</string>
+    <string name="ss_node_home_udp">Home direct · UDP stream</string>
+    <string name="ss_node_home_relay">Home relay · TCP/UDP</string>
+    <string name="ss_node_home_relay_tcp">Home relay · TCP</string>
+    <string name="ss_node_home_relay_udp">Home relay · UDP stream</string>
     <string name="ss_node_company">Company · TCP/UDP</string>
     <string name="ss_latency_ms">%1$d ms</string>
     <string name="ss_latency_unreachable">Unreachable</string>
@@ -23,7 +38,8 @@
     <string name="ss_latency_skipped">UDP only</string>
     <string name="ss_route_home">Home</string>
     <string name="ss_route_company">Company</string>
-    <string name="ss_route_home_detail">TCP via home TCP node · UDP via home UDP node</string>
+    <string name="ss_route_home_detail">Direct: TCP via home TCP sub · UDP via home UDP sub</string>
+    <string name="ss_route_home_relay_detail">Relay: TCP &amp; UDP via fixed company home-relay node</string>
     <string name="ss_route_company_detail">TCP and UDP via company node</string>
     <string name="ss_direct_note">Stream UDP is decrypted directly in Moonlight\'s receive thread, with no local relay. Mic uplink and voice Fn are routed too.</string>
     <string name="ss_stat_received">Direct received</string>
@@ -35,7 +51,28 @@
     <string name="ss_action_probe">Test</string>
     <string name="ss_action_close">Close</string>
     <string name="ss_busy_toggle">Switching…</string>
-    <string name="ss_busy_refresh">Updating both home subscriptions…</string>
+    <string name="ss_busy_switch_mode">Switching home route…</string>
+    <string name="ss_busy_refresh">Updating home direct subscriptions…</string>
     <string name="ss_busy_import">Reading config and updating subscriptions…</string>
     <string name="ss_error_generic">Operation failed. Check the config file, subscriptions and network.</string>
+    <string name="ss_err_unsupported_cipher">Unsupported cipher (AEAD and SS 2022 are supported).</string>
+    <string name="ss_err_invalid_node">Invalid SS node settings (check server, port, password).</string>
+    <string name="ss_err_https_only">Subscription URLs must use HTTPS.</string>
+    <string name="ss_err_redirect_limit">Too many subscription redirects (max 5).</string>
+    <string name="ss_err_redirect_invalid">Subscription redirect missing target Location.</string>
+    <string name="ss_err_redirect_https_only">Subscription redirects must remain HTTPS.</string>
+    <string name="ss_err_http_status">Subscription server returned HTTP %1$d.</string>
+    <string name="ss_err_yaml_no_proxies">Subscription YAML is missing proxies.</string>
+    <string name="ss_err_yaml_node_count">Each subscription must contain exactly 1 usable SS node.</string>
+    <string name="ss_err_plugin_unsupported">Node requires an unsupported transport plugin or udp-over-tcp.</string>
+    <string name="ss_err_dns">DNS lookup failed. Check network or proxy settings.</string>
+    <string name="ss_err_timeout">Subscription request timed out.</string>
+    <string name="ss_err_tls">HTTPS certificate or TLS handshake failed.</string>
+    <string name="ss_err_json_format">Config file is not valid JSON.</string>
+    <string name="ss_err_no_subscription_urls">Config has no home subscription URLs.</string>
+    <string name="ss_err_no_relay">Config has no homeRelay node. Re-import config with homeRelay.</string>
+    <string name="ss_err_no_direct">Direct home subscriptions not fetched yet. Tap Update first.</string>
+    <string name="ss_err_native_hook">Failed to hook Moonlight native network calls.</string>
+    <string name="ss_err_native_start">Failed to start built-in SS engine.</string>
+    <string name="ss_warn_relay_only">Imported fixed relay config; direct subscription refresh failed: %1$s</string>
 </resources>

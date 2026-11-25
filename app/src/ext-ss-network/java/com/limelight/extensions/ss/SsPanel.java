@@ -32,8 +32,6 @@ final class SsPanel {
     static final int IMPORT = 24032;
     private static final String IMPORT_TAG = "ext-ss-network-import";
     private static final WeakHashMap<Activity, SsPanel> panels = new WeakHashMap<>();
-    private static final int[] NODE_NAMES = {
-            R.string.ss_node_home_tcp, R.string.ss_node_home_udp, R.string.ss_node_company};
 
     private final Activity activity;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -50,7 +48,8 @@ final class SsPanel {
     private View content;
     private TextView received;
     private int busy;          // progress message resource while working, 0 when idle
-    private boolean failed;
+    private String notice;     // sanitized error or partial-import warning
+    private boolean noticeIsError;
 
     private SsPanel(Activity activity) {
         this.activity = activity;
@@ -72,7 +71,8 @@ final class SsPanel {
 
     void show() {
         if (activity.isFinishing() || (dialog != null && dialog.isShowing())) return;
-        failed = false;
+        notice = null;
+        noticeIsError = false;
         content = LayoutInflater.from(activity).inflate(R.layout.ss_panel, null);
         received = content.findViewById(R.id.ssPanelReceived);
         ((ImageView) content.findViewById(R.id.ssPanelIcon)).setImageDrawable(new SsStatusIcon(activity));
@@ -81,11 +81,15 @@ final class SsPanel {
         View importAction = content.findViewById(R.id.ssPanelImport);
         View refresh = content.findViewById(R.id.ssPanelRefresh);
         View probe = content.findViewById(R.id.ssPanelProbe);
+        View modeDirect = content.findViewById(R.id.ssModeDirect);
+        View modeRelay = content.findViewById(R.id.ssModeRelay);
         close.setOnClickListener(v -> dismiss());
         primary.setOnClickListener(v -> onPrimary());
         importAction.setOnClickListener(v -> pickConfig());
-        refresh.setOnClickListener(v -> perform(R.string.ss_busy_refresh, () -> SsRoutes.refresh(null)));
+        refresh.setOnClickListener(v -> perform(R.string.ss_busy_refresh, () -> SsRoutes.refresh(activity, null)));
         probe.setOnClickListener(v -> SsRoutes.probeAsync(true));
+        modeDirect.setOnClickListener(v -> selectHomeMode(SsRoutes.HomeMode.DIRECT));
+        modeRelay.setOnClickListener(v -> selectHomeMode(SsRoutes.HomeMode.RELAY));
 
         dialog = AppDialog.createCustomDialog(activity, content, true);
         if (dialog == null) return;
@@ -95,8 +99,8 @@ final class SsPanel {
         });
         SsRoutes.addListener(listener);
         render();
-        AppDialog.showCustomDialog(activity, dialog, 0.9f, 460, primary, close,
-                close, primary, importAction, refresh, probe);
+        AppDialog.showCustomDialog(activity, dialog, 0.92f, 480, primary, close,
+                close, modeDirect, modeRelay, primary, importAction, refresh, probe);
         main.post(ticker);
         SsRoutes.probeAsync();
     }
@@ -108,7 +112,18 @@ final class SsPanel {
 
     private void onPrimary() {
         if (!SsRoutes.configured()) pickConfig();
-        else perform(R.string.ss_busy_toggle, SsRoutes::toggle);
+        else perform(R.string.ss_busy_toggle, () -> {
+            SsRoutes.toggle();
+            return null;
+        });
+    }
+
+    private void selectHomeMode(SsRoutes.HomeMode mode) {
+        if (busy != 0 || mode == SsRoutes.homeMode()) return;
+        perform(R.string.ss_busy_switch_mode, () -> {
+            SsRoutes.setHomeMode(mode);
+            return null;
+        });
     }
 
     private void pickConfig() {
@@ -132,33 +147,36 @@ final class SsPanel {
                 if (in == null) throw new IllegalStateException("cannot open file");
                 config = SsRoutes.readText(in);
             }
-            SsRoutes.refresh(config);
+            return SsRoutes.refresh(activity, config);
         });
         show();
     }
 
     private interface Task {
-        void run() throws Exception;
+        String run() throws Exception;
     }
 
     private void perform(int progress, Task task) {
         if (busy != 0) return;
         busy = progress;
-        failed = false;
+        notice = null;
+        noticeIsError = false;
         render();
         SsRoutes.worker.execute(() -> {
-            boolean ok;
+            String resultNotice = null;
+            boolean isError = false;
             try {
-                task.run();
-                ok = true;
+                resultNotice = task.run();
             } catch (Throwable t) {
-                // Exceptions can carry the subscription URL or raw YAML, so they are not shown.
-                ok = false;
+                resultNotice = SsRoutes.describeError(activity, t);
+                isError = true;
             }
-            final boolean success = ok;
+            final String finalNotice = resultNotice;
+            final boolean finalIsError = isError;
             main.post(() -> {
                 busy = 0;
-                failed = !success;
+                notice = finalNotice;
+                noticeIsError = finalIsError;
                 render();
             });
         });
@@ -167,22 +185,61 @@ final class SsPanel {
     private void render() {
         if (content == null) return;
         SsRoutes.Status status = SsRoutes.status();
+        SsRoutes.HomeMode homeMode = SsRoutes.homeMode();
         boolean configured = SsRoutes.configured();
         boolean enabled = SsRoutes.isEnabled();
         boolean available = status != SsRoutes.Status.UNAVAILABLE;
+        boolean vpnActive = SsRoutes.isSystemVpnActive();
+        boolean hasBypass = SsRoutes.hasBypassNetwork();
         int stateColor = SsStatusIcon.color(activity, status);
 
         ImageView icon = content.findViewById(R.id.ssPanelIcon);
         if (icon.getDrawable() instanceof SsStatusIcon) ((SsStatusIcon) icon.getDrawable()).setStatus(status);
         dot(content.findViewById(R.id.ssPanelDot), stateColor);
         TextView state = content.findViewById(R.id.ssPanelState);
-        state.setText(!configured && available ? R.string.ss_state_unconfigured : SsToolbar.stateLabel(status));
+        String stateText = !configured && available
+                ? activity.getString(R.string.ss_state_unconfigured)
+                : activity.getString(SsToolbar.stateLabel(status));
+        if (configured && enabled) {
+            stateText = stateText + " · " + activity.getString(
+                    homeMode == SsRoutes.HomeMode.RELAY ? R.string.ss_mode_relay_short : R.string.ss_mode_direct_short);
+        }
+        state.setText(stateText);
         state.setTextColor(enabled ? stateColor : activity.getResources().getColor(R.color.home_secondary_text));
+
+        // System VPN / FlClash coexistence banner
+        TextView vpnBanner = content.findViewById(R.id.ssPanelVpnBanner);
+        if (vpnActive) {
+            vpnBanner.setVisibility(View.VISIBLE);
+            if (!enabled) {
+                vpnBanner.setText(R.string.ss_vpn_banner_off);
+                vpnBanner.setBackgroundResource(R.drawable.ss_bg_banner_info);
+                vpnBanner.setTextColor(activity.getResources().getColor(R.color.home_accent_bright));
+            } else if (hasBypass) {
+                vpnBanner.setText(R.string.ss_vpn_banner_bypass);
+                vpnBanner.setBackgroundResource(R.drawable.ss_bg_banner_info);
+                vpnBanner.setTextColor(activity.getResources().getColor(R.color.home_connected));
+            } else {
+                vpnBanner.setText(R.string.ss_vpn_banner_no_bypass);
+                vpnBanner.setBackgroundResource(R.drawable.ss_bg_banner_warn);
+                vpnBanner.setTextColor(activity.getResources().getColor(R.color.home_warning));
+            }
+        } else {
+            vpnBanner.setVisibility(View.GONE);
+        }
 
         content.findViewById(R.id.ssPanelEmpty).setVisibility(configured ? View.GONE : View.VISIBLE);
         content.findViewById(R.id.ssPanelContent).setVisibility(configured ? View.VISIBLE : View.GONE);
         content.findViewById(R.id.ssPanelSecondary).setVisibility(configured ? View.VISIBLE : View.GONE);
-        if (configured) renderNodes(enabled);
+        if (configured) {
+            renderHomeModeSelector(homeMode, available && busy == 0);
+            renderNodes(enabled);
+            TextView routeHomeDetail = content.findViewById(R.id.ssRouteHomeDetail);
+            routeHomeDetail.setText(homeMode == SsRoutes.HomeMode.RELAY
+                    ? R.string.ss_route_home_relay_detail
+                    : R.string.ss_route_home_detail);
+        }
+
         received.setText(Formatter.formatShortFileSize(activity, SsRoutes.receivedBytes()));
         long updated = SsRoutes.updated();
         String pattern = DateFormat.getBestDateTimePattern(Locale.getDefault(),
@@ -198,18 +255,52 @@ final class SsPanel {
         primary.setEnabled(available && busy == 0);
         primary.setAlpha(primary.isEnabled() ? 1f : 0.5f);
         setActionEnabled(R.id.ssPanelImport, available && busy == 0);
-        setActionEnabled(R.id.ssPanelRefresh, available && busy == 0);
+        setActionEnabled(R.id.ssPanelRefresh, available && busy == 0 && SsRoutes.hasSubscriptionUrls());
         setActionEnabled(R.id.ssPanelProbe, enabled && !SsRoutes.isProbing());
 
         TextView message = content.findViewById(R.id.ssPanelMessage);
-        if (busy != 0 || failed) {
+        if (busy != 0 || (notice != null && !notice.isEmpty())) {
             message.setVisibility(View.VISIBLE);
-            message.setText(busy != 0 ? busy : R.string.ss_error_generic);
-            message.setTextColor(activity.getResources().getColor(
-                    busy != 0 ? R.color.home_secondary_text : R.color.home_destructive));
+            message.setText(busy != 0 ? activity.getString(busy) : notice);
+            int colorRes = busy != 0 ? R.color.home_secondary_text
+                    : (noticeIsError ? R.color.home_destructive : R.color.home_warning);
+            message.setTextColor(activity.getResources().getColor(colorRes));
         } else {
             message.setVisibility(View.GONE);
         }
+    }
+
+    private void renderHomeModeSelector(SsRoutes.HomeMode activeMode, boolean interactive) {
+        boolean hasDirect = SsRoutes.hasDirectHomeNodes();
+        boolean hasRelay = SsRoutes.hasRelayHomeNodes();
+        updateModeSegment(
+                content.findViewById(R.id.ssModeDirect),
+                content.findViewById(R.id.ssModeDirectTitle),
+                content.findViewById(R.id.ssModeDirectSub),
+                activeMode == SsRoutes.HomeMode.DIRECT,
+                hasDirect,
+                interactive,
+                hasDirect ? R.string.ss_mode_direct_sub : R.string.ss_mode_unconfigured);
+        updateModeSegment(
+                content.findViewById(R.id.ssModeRelay),
+                content.findViewById(R.id.ssModeRelayTitle),
+                content.findViewById(R.id.ssModeRelaySub),
+                activeMode == SsRoutes.HomeMode.RELAY,
+                hasRelay,
+                interactive,
+                hasRelay ? R.string.ss_mode_relay_sub : R.string.ss_mode_unconfigured);
+    }
+
+    private void updateModeSegment(View container, TextView title, TextView sub,
+                                   boolean selected, boolean available, boolean interactive, int subRes) {
+        container.setBackgroundResource(selected ? R.drawable.ss_bg_segment_selected : R.drawable.ss_bg_segment_normal);
+        container.setEnabled(interactive);
+        container.setAlpha(available ? 1f : 0.55f);
+        title.setTextColor(activity.getResources().getColor(
+                selected ? R.color.home_accent_bright : R.color.home_primary_text));
+        sub.setText(subRes);
+        sub.setTextColor(activity.getResources().getColor(
+                selected ? R.color.home_primary_text : R.color.home_secondary_text));
     }
 
     private void setActionEnabled(int id, boolean enabled) {
@@ -233,7 +324,7 @@ final class SsPanel {
             View row = list.getChildAt(i);
             SsRoutes.Node node = nodes.get(i);
             SsRoutes.Probe probe = probes != null && i < probes.size() ? probes.get(i) : null;
-            ((TextView) row.findViewById(R.id.ssNodeName)).setText(NODE_NAMES[Math.min(i, NODE_NAMES.length - 1)]);
+            ((TextView) row.findViewById(R.id.ssNodeName)).setText(node.labelRes);
             ((TextView) row.findViewById(R.id.ssNodeHost)).setText(node.host + ":" + node.port);
             TextView latency = row.findViewById(R.id.ssNodeLatency);
             int color;

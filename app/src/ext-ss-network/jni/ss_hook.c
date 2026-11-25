@@ -15,6 +15,7 @@
 #define _GNU_SOURCE
 #endif
 #include <arpa/inet.h>
+#include <dlfcn.h>
 #include <elf.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -33,6 +34,7 @@
 #include <unistd.h>
 
 extern bool vss_config(const char *json);
+extern void vss_set_net_handle(uint64_t handle);
 extern uint16_t vss_open_tcp(uint32_t ip, uint16_t port, uint16_t source);
 extern const void *vss_udp_acquire(uint32_t ip, uint32_t *server_ip, uint16_t *server_port);
 extern void vss_udp_release(const void *node);
@@ -63,6 +65,7 @@ struct flow {
     uint32_t prefix;             // destination /24 this socket was bound to
     struct sockaddr_in server;
     size_t overhead;
+    uint64_t bound_handle;
     pthread_mutex_t recv_lock;   // guards scratch and batch ring; one receiver per socket in practice
     unsigned char *scratch;
 #ifdef HAVE_RECVMMSG_BATCH
@@ -79,6 +82,42 @@ static atomic_bool enabled;
 static _Atomic(struct flow *) flows[MAX_FLOW_FD];
 static pthread_mutex_t create_lock = PTHREAD_MUTEX_INITIALIZER;
 static atomic_uint_fast64_t received_bytes;
+static atomic_uint_fast64_t bypass_net_handle;
+
+#if defined(__ANDROID__)
+typedef int (*android_setsocknetwork_fn)(uint64_t network, int fd);
+static pthread_once_t net_fn_once = PTHREAD_ONCE_INIT;
+static android_setsocknetwork_fn p_android_setsocknetwork = NULL;
+
+static void resolve_setsocknetwork(void) {
+    void *lib = dlopen("libandroid.so", RTLD_LAZY);
+    if (lib) {
+        p_android_setsocknetwork = (android_setsocknetwork_fn)dlsym(lib, "android_setsocknetwork");
+    }
+}
+
+static void apply_bypass_network(int fd, uint64_t handle) {
+    if (handle == 0) return;
+    pthread_once(&net_fn_once, resolve_setsocknetwork);
+    if (p_android_setsocknetwork) {
+        p_android_setsocknetwork(handle, fd);
+    }
+}
+#else
+static void apply_bypass_network(int fd, uint64_t handle) {
+    (void)fd;
+    (void)handle;
+}
+#endif
+
+JNIEXPORT void JNICALL Java_com_limelight_extensions_ss_SsNative_setBypassNetHandle(
+        JNIEnv *env, jclass cls, jlong handle) {
+    (void)env;
+    (void)cls;
+    uint64_t h = (uint64_t)handle;
+    atomic_store_explicit(&bypass_net_handle, h, memory_order_release);
+    vss_set_net_handle(h);
+}
 
 JNIEXPORT jboolean JNICALL Java_com_limelight_extensions_ss_SsNative_setSsRoutes(
         JNIEnv *env, jclass cls, jbyteArray config) {
@@ -149,6 +188,11 @@ static struct flow *flow_for_send(int fd, uint32_t prefix, uint32_t ip) {
                                                  .sin_addr.s_addr = htonl(server_ip)};
                 f->overhead = vss_udp_overhead(node);
                 f->scratch = scratch;
+                uint64_t net_handle = atomic_load_explicit(&bypass_net_handle, memory_order_acquire);
+                if (net_handle != 0) {
+                    apply_bypass_network(fd, net_handle);
+                }
+                f->bound_handle = net_handle;
                 pthread_mutex_init(&f->recv_lock, NULL);
                 atomic_store_explicit(&flows[fd], f, memory_order_release);
             } else {
@@ -178,6 +222,11 @@ extern ssize_t __recvfrom_chk(int, void *, size_t, size_t, int, struct sockaddr 
 // Encrypts `plain` for `peer` and sends it to the SS server from the same socket.
 static ssize_t send_direct(int fd, struct flow *f, const struct sockaddr_in *peer,
                            const void *plain, size_t n, int flags, const struct msghdr *ctl) {
+    uint64_t net_handle = atomic_load_explicit(&bypass_net_handle, memory_order_relaxed);
+    if (net_handle != f->bound_handle) {
+        if (net_handle != 0) apply_bypass_network(fd, net_handle);
+        f->bound_handle = net_handle;
+    }
     unsigned char stack[SEND_STACK];
     size_t cap = (n == 0 ? 900 : n) + f->overhead;
     unsigned char *out = cap <= sizeof(stack) ? stack : malloc(cap);

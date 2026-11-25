@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EXTENSION DEVELOPMENT [EXT-SS-NETWORK] [ADDED] -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="12dp" />
+            <solid android:color="#387C3AED" />
+            <stroke android:width="2dp" android:color="#E9DDFF" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="12dp" />
+            <solid android:color="#2E7C3AED" />
+            <stroke android:width="1.5dp" android:color="#B39B7BFF" />
+        </shape>
+    </item>
+</selector>

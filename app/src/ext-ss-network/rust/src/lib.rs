@@ -47,6 +47,43 @@ const AEAD2022_CLIENT_TYPE: u8 = 0;
 const AEAD2022_SERVER_TYPE: u8 = 1;
 const AEAD2022_MAX_TS_DIFF: u64 = 30;
 
+static BYPASS_NET_HANDLE: AtomicU64 = AtomicU64::new(0);
+
+/// Sets the Android underlying non-VPN network handle (`Network.getNetworkHandle()`)
+/// so outbound SS sockets bypass an active system VPN (e.g., FlClash TUN) and avoid
+/// double-tunneling. Pass `0` to use normal OS routing.
+#[no_mangle]
+pub extern "C" fn vss_set_net_handle(handle: u64) {
+    BYPASS_NET_HANDLE.store(handle, Ordering::Release);
+}
+
+#[cfg(target_os = "android")]
+fn bind_fd_to_network(handle: u64, fd: std::os::unix::io::RawFd) -> std::io::Result<()> {
+    if handle == 0 {
+        return Ok(());
+    }
+    type SetSockNetFn = unsafe extern "C" fn(u64, libc::c_int) -> libc::c_int;
+    static FN: OnceLock<Option<SetSockNetFn>> = OnceLock::new();
+    let func = *FN.get_or_init(|| unsafe {
+        let lib = libc::dlopen(b"libandroid.so\0".as_ptr() as *const c_char, libc::RTLD_LAZY);
+        if lib.is_null() {
+            return None;
+        }
+        let sym = libc::dlsym(lib, b"android_setsocknetwork\0".as_ptr() as *const c_char);
+        if sym.is_null() {
+            return None;
+        }
+        Some(std::mem::transmute::<*mut libc::c_void, SetSockNetFn>(sym))
+    });
+    if let Some(f) = func {
+        let rc = unsafe { f(handle, fd) };
+        if rc != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
+
 thread_local! {
     static UDP_ENC_BUF: RefCell<BytesMut> = RefCell::new(BytesMut::with_capacity(2048));
 }
@@ -113,6 +150,8 @@ struct Node {
     password: String,
     #[serde(default)]
     tfo: bool,
+    #[serde(default)]
+    resolved_ip: Option<String>,
 }
 impl Node {
     fn config(self) -> Option<Endpoint> {
@@ -131,9 +170,17 @@ impl Node {
         {
             return None;
         }
-        let address = match self.server.parse::<IpAddr>() {
-            Ok(ip) => ServerAddr::SocketAddr(SocketAddr::new(ip, self.port)),
-            Err(_) => ServerAddr::DomainName(self.server, self.port),
+        let address = if let Some(ip) = self
+            .resolved_ip
+            .as_deref()
+            .and_then(|s| s.parse::<IpAddr>().ok())
+        {
+            ServerAddr::SocketAddr(SocketAddr::new(ip, self.port))
+        } else {
+            match self.server.parse::<IpAddr>() {
+                Ok(ip) => ServerAddr::SocketAddr(SocketAddr::new(ip, self.port)),
+                Err(_) => ServerAddr::DomainName(self.server, self.port),
+            }
         };
         Some(Endpoint {
             config: ServerConfig::new(address, self.password, self.cipher.parse().ok()?).ok()?,
@@ -575,6 +622,13 @@ fn forward_tcp(ip: u32, port: u16, source: u16) -> Option<u16> {
         let mut opts = shadowsocks::net::ConnectOpts::default();
         opts.tcp.nodelay = true;
         opts.tcp.fastopen = node.tfo;
+        #[cfg(target_os = "android")]
+        {
+            let handle = BYPASS_NET_HANDLE.load(Ordering::Acquire);
+            if handle != 0 {
+                opts.set_vpn_socket_protect(move |fd| bind_fd_to_network(handle, fd));
+            }
+        }
         let Ok(Ok(mut proxy)) = timeout(
             Duration::from_secs(10),
             ProxyClientStream::connect_with_opts(ctx, &node.config, addr, &opts),
@@ -1012,5 +1066,23 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    #[test]
+    fn resolved_ip_overrides_hostname_and_net_handle_roundtrips() {
+        vss_set_net_handle(0x1234_5678_9abc_def0);
+        assert_eq!(BYPASS_NET_HANDLE.load(Ordering::Acquire), 0x1234_5678_9abc_def0);
+        vss_set_net_handle(0);
+        assert_eq!(BYPASS_NET_HANDLE.load(Ordering::Acquire), 0);
+
+        let n: Node = serde_json::from_str(
+            r#"{"server":"fake.invalid","port":32502,"cipher":"2022-blake3-aes-128-gcm","password":"AAAAAAAAAAAAAAAAAAAAAA==","resolved_ip":"127.0.0.1"}"#,
+        )
+        .unwrap();
+        let ep = n.config().expect("valid SS 2022 node with resolved_ip");
+        assert_eq!(
+            ep.config.addr(),
+            &ServerAddr::SocketAddr(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 32502))
+        );
     }
 }

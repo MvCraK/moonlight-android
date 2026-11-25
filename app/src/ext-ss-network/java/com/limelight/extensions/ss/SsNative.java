@@ -14,6 +14,7 @@ final class SsNative {
     /** Redirects libmoonlight-core's socket calls; returns hooked slots, or -1 if not found. */
     static native int installHooks();
     static native boolean setSsRoutes(byte[] nodes);
+    static native void setBypassNetHandle(long netHandle);
     static native long ssReceivedBytes();
     static native int openSsTcp(int ipv4, int port, int localPort);
 

@@ -40,4 +40,4 @@ for abi in sys.argv[4:]:
     shutil.copyfile(cargo_dir / target / "release/libss_network.so", out / "libss_network.so")
     subprocess.run([cc, "-shared", "-fPIC", "-O2", "-Wall", "-Werror", page,
                     "-Wl,-soname,libss_network_jni.so", "-o", str(out / "libss_network_jni.so"),
-                    str(hook_source), "-L" + str(out), "-lss_network"], check=True)
+                    str(hook_source), "-L" + str(out), "-lss_network", "-ldl"], check=True)

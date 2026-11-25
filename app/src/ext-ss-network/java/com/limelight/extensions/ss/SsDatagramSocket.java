@@ -35,6 +35,7 @@ public final class SsDatagramSocket extends DatagramSocket {
         int[] serverInfo = new int[2];
         long acquired = SsNative.udpAcquire(ByteBuffer.wrap(address.getAddress()).getInt(), serverInfo);
         if (acquired == 0) return false;
+        SsRoutes.bindSocketToUnderlyingNetwork(this);
         releaseNode();
         node = acquired;
         target = new InetSocketAddress(address, port);
