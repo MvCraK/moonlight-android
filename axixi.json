@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2215,
+    "versionCode": 2216,
     "versionName": "26.11.07",
-    "commit": "fd7898c39b98004ab8ac6e4bc37f9752cc252103",
-    "size": 12546475,
-    "sha256": "2ab710150ff8d36469e49af2ceefd8b7fa74dd2bf8d8e5e20ab8f910b09229ca",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2215/axixi-2215.apk",
-    "notes": "feat(ss): add home company-relay mode, non-VPN bypass binding, and redesigned panel"
+    "commit": "cbda4e5f36bf913a478bf00e61b730af054ba12b",
+    "size": 12542379,
+    "sha256": "da55f339bd73d7946f0461083968e2d8bc3da403fbf7022c8217e181d5ca834d",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2216/axixi-2216.apk",
+    "notes": "ui(ss): remove static route-rules section from SS panel for compact layout"
   },
   "history": [
+    {
+      "versionCode": 2215,
+      "versionName": "26.11.07",
+      "commit": "fd7898c39b98004ab8ac6e4bc37f9752cc252103",
+      "size": 12546475,
+      "sha256": "2ab710150ff8d36469e49af2ceefd8b7fa74dd2bf8d8e5e20ab8f910b09229ca",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2215/axixi-2215.apk",
+      "notes": "feat(ss): add home company-relay mode, non-VPN bypass binding, and redesigned panel"
+    },
     {
       "versionCode": 2214,
       "versionName": "26.11.07",
