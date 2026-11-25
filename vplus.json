@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.vplus",
   "latest": {
-    "versionCode": 2777,
+    "versionCode": 2778,
     "versionName": "12.15.33",
-    "commit": "a639261bf3a9170fd969524abc4fb92a2f403397",
-    "size": 30498688,
-    "sha256": "24976ae42ee263802f7a03ce27f53cfbe34548ad365d2f4e573cb620dadb2dc8",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2777/vplus-2777.apk",
-    "notes": "Merge commit '353e2cb3465fd09fd7581e62b4715592c9feca03' into vplus"
+    "commit": "6381580ffa7bf4ae5b49b76e2d020a23a7e97648",
+    "size": 30670720,
+    "sha256": "dc84e3fd1becd22fc7b827bd51bc0858853905f5828003c89f85d099023d4e06",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2778/vplus-2778.apk",
+    "notes": "feat(ss): port SS 2022, add home company-relay mode, non-VPN bypass, and redesigned Compose panel"
   },
   "history": [
+    {
+      "versionCode": 2777,
+      "versionName": "12.15.33",
+      "commit": "a639261bf3a9170fd969524abc4fb92a2f403397",
+      "size": 30498688,
+      "sha256": "24976ae42ee263802f7a03ce27f53cfbe34548ad365d2f4e573cb620dadb2dc8",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2777/vplus-2777.apk",
+      "notes": "Merge commit '353e2cb3465fd09fd7581e62b4715592c9feca03' into vplus"
+    },
     {
       "versionCode": 2776,
       "versionName": "12.15.33",
