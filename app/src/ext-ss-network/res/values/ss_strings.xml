@@ -24,7 +24,6 @@
     <string name="ss_vpn_banner_bypass">System VPN active · SS binds underlying network to avoid double-tunneling</string>
     <string name="ss_vpn_banner_no_bypass">System VPN active with no physical fallback · set SS nodes DIRECT in your VPN</string>
     <string name="ss_section_nodes">Active nodes</string>
-    <string name="ss_section_routes">Routes</string>
     <string name="ss_node_home_tcp">Home direct · TCP</string>
     <string name="ss_node_home_udp">Home direct · UDP stream</string>
     <string name="ss_node_home_relay">Home relay · TCP/UDP</string>
@@ -36,12 +35,6 @@
     <string name="ss_latency_checking">Checking…</string>
     <string name="ss_latency_idle">—</string>
     <string name="ss_latency_skipped">UDP only</string>
-    <string name="ss_route_home">Home</string>
-    <string name="ss_route_company">Company</string>
-    <string name="ss_route_home_detail">Direct: TCP via home TCP sub · UDP via home UDP sub</string>
-    <string name="ss_route_home_relay_detail">Relay: TCP &amp; UDP via fixed company home-relay node</string>
-    <string name="ss_route_company_detail">TCP and UDP via company node</string>
-    <string name="ss_direct_note">Stream UDP is decrypted directly in Moonlight\'s receive thread, with no local relay. Mic uplink and voice Fn are routed too.</string>
     <string name="ss_stat_received">Direct received</string>
     <string name="ss_stat_updated">Subscriptions updated</string>
     <string name="ss_action_connect">Connect</string>

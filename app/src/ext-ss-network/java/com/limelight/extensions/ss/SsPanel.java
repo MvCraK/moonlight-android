@@ -234,10 +234,6 @@ final class SsPanel {
         if (configured) {
             renderHomeModeSelector(homeMode, available && busy == 0);
             renderNodes(enabled);
-            TextView routeHomeDetail = content.findViewById(R.id.ssRouteHomeDetail);
-            routeHomeDetail.setText(homeMode == SsRoutes.HomeMode.RELAY
-                    ? R.string.ss_route_home_relay_detail
-                    : R.string.ss_route_home_detail);
         }
 
         received.setText(Formatter.formatShortFileSize(activity, SsRoutes.receivedBytes()));
