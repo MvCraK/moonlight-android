@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2214,
+    "versionCode": 2215,
     "versionName": "26.11.07",
-    "commit": "1e9c24ef77f7dcd444c8ca5a9ce106d6bc27db1d",
-    "size": 12517579,
-    "sha256": "541e96fb37900ae0183982da22578afe051a08f50a5382dfdbba89b1c0e0734c",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2214/axixi-2214.apk",
-    "notes": "Fix One UI taskbar bottom-edge touch, 5G frame-gap IDR guard, and stream hot paths"
+    "commit": "fd7898c39b98004ab8ac6e4bc37f9752cc252103",
+    "size": 12546475,
+    "sha256": "2ab710150ff8d36469e49af2ceefd8b7fa74dd2bf8d8e5e20ab8f910b09229ca",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2215/axixi-2215.apk",
+    "notes": "feat(ss): add home company-relay mode, non-VPN bypass binding, and redesigned panel"
   },
   "history": [
+    {
+      "versionCode": 2214,
+      "versionName": "26.11.07",
+      "commit": "1e9c24ef77f7dcd444c8ca5a9ce106d6bc27db1d",
+      "size": 12517579,
+      "sha256": "541e96fb37900ae0183982da22578afe051a08f50a5382dfdbba89b1c0e0734c",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2214/axixi-2214.apk",
+      "notes": "Fix One UI taskbar bottom-edge touch, 5G frame-gap IDR guard, and stream hot paths"
+    },
     {
       "versionCode": 2213,
       "versionName": "26.11.07",
