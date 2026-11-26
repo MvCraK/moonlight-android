@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.axixi",
   "latest": {
-    "versionCode": 2216,
+    "versionCode": 2217,
     "versionName": "26.11.07",
-    "commit": "cbda4e5f36bf913a478bf00e61b730af054ba12b",
-    "size": 12542379,
-    "sha256": "da55f339bd73d7946f0461083968e2d8bc3da403fbf7022c8217e181d5ca834d",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2216/axixi-2216.apk",
-    "notes": "ui(ss): remove static route-rules section from SS panel for compact layout"
+    "commit": "eaa1df4a94414eb8722fcef3caa07b63180d80b1",
+    "size": 12546475,
+    "sha256": "6e1d25d56f0ec49c3daf1f2d47808dab83bc4155eca6f71cd0c72b184329c99e",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2217/axixi-2217.apk",
+    "notes": "fix(network): use STREAM_CFG_REMOTE and 1280B packet size for cross-subnet private hosts"
   },
   "history": [
+    {
+      "versionCode": 2216,
+      "versionName": "26.11.07",
+      "commit": "cbda4e5f36bf913a478bf00e61b730af054ba12b",
+      "size": 12542379,
+      "sha256": "da55f339bd73d7946f0461083968e2d8bc3da403fbf7022c8217e181d5ca834d",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/axixi-2216/axixi-2216.apk",
+      "notes": "ui(ss): remove static route-rules section from SS panel for compact layout"
+    },
     {
       "versionCode": 2215,
       "versionName": "26.11.07",
