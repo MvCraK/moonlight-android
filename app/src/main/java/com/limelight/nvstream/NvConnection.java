@@ -280,23 +280,131 @@ public class NvConnection {
         }
     }
 
-    private int detectServerConnectionType() {
+    static final int REMOTE_DEFAULT_PACKET_SIZE = 1024;
+    static final int CROSS_SUBNET_PRIVATE_PACKET_SIZE = 1280;
+
+    static final class DetectedConnection {
+        final int remoteStreaming;
+        final int packetSize;
+        final boolean crossSubnetPrivate;
+
+        DetectedConnection(int remoteStreaming, int packetSize, boolean crossSubnetPrivate) {
+            this.remoteStreaming = remoteStreaming;
+            this.packetSize = packetSize;
+            this.crossSubnetPrivate = crossSubnetPrivate;
+        }
+    }
+
+    static boolean isPrivateNetworkAddress(InetAddress addr) {
+        if (addr == null || addr.isLoopbackAddress()) {
+            return false;
+        }
+
+        byte[] raw = addr.getAddress();
+        if (raw == null) {
+            return false;
+        }
+
+        if (raw.length == 4) {
+            int b0 = raw[0] & 0xFF;
+            int b1 = raw[1] & 0xFF;
+            // RFC1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+            return b0 == 10 ||
+                    (b0 == 172 && (b1 & 0xF0) == 16) ||
+                    (b0 == 192 && b1 == 168);
+        }
+        else if (raw.length == 16) {
+            // IPv6 ULA: fc00::/7
+            return (raw[0] & 0xFE) == 0xFC;
+        }
+
+        return false;
+    }
+
+    static DetectedConnection resolveDetectedConnection(
+            boolean isVpnOrCellular,
+            boolean hasVerifiedNonVpnNonCellularCaps,
+            boolean isNat64,
+            InetAddress serverAddress,
+            boolean matchedOnLinkRoute,
+            boolean matchedGatewayRoute,
+            boolean ssRouted,
+            int maxPacketSize) {
+        if (isVpnOrCellular || isNat64) {
+            return new DetectedConnection(
+                    StreamConfiguration.STREAM_CFG_REMOTE,
+                    REMOTE_DEFAULT_PACKET_SIZE,
+                    false);
+        }
+
+        if (serverAddress != null && serverAddress.isLoopbackAddress()) {
+            return new DetectedConnection(
+                    StreamConfiguration.STREAM_CFG_LOCAL,
+                    maxPacketSize,
+                    false);
+        }
+
+        if (matchedOnLinkRoute) {
+            return new DetectedConnection(
+                    StreamConfiguration.STREAM_CFG_LOCAL,
+                    maxPacketSize,
+                    false);
+        }
+
+        if (hasVerifiedNonVpnNonCellularCaps &&
+                matchedGatewayRoute &&
+                isPrivateNetworkAddress(serverAddress) &&
+                !ssRouted) {
+            return new DetectedConnection(
+                    StreamConfiguration.STREAM_CFG_REMOTE,
+                    Math.min(maxPacketSize, CROSS_SUBNET_PRIVATE_PACKET_SIZE),
+                    true);
+        }
+
+        // If we can't determine the connection type, let moonlight-common-c decide.
+        return new DetectedConnection(
+                StreamConfiguration.STREAM_CFG_AUTO,
+                maxPacketSize,
+                false);
+    }
+
+    private static boolean hasRouteGateway(RouteInfo route) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // We want to use hasGateway() because getGateway() doesn't adhere
+            // to documented behavior of returning null for on-link addresses.
+            return route.hasGateway();
+        }
+        else {
+            // getGateway() is documented to return null for on-link destinations,
+            // but it actually returns the unspecified address (0.0.0.0 or ::).
+            InetAddress gateway = route.getGateway();
+            return gateway != null && !gateway.isAnyLocalAddress();
+        }
+    }
+
+    private DetectedConnection detectServerConnection(int maxPacketSize) {
         ConnectivityManager connMgr = (ConnectivityManager) appContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (connMgr == null) {
+            return new DetectedConnection(StreamConfiguration.STREAM_CFG_AUTO, maxPacketSize, false);
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             Network activeNetwork = connMgr.getActiveNetwork();
             if (activeNetwork != null) {
                 NetworkCapabilities netCaps = connMgr.getNetworkCapabilities(activeNetwork);
+                boolean hasVerifiedNonVpnNonCellularCaps = false;
                 if (netCaps != null) {
                     if (netCaps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) ||
                             !netCaps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) {
                         // VPNs are treated as remote connections
-                        return StreamConfiguration.STREAM_CFG_REMOTE;
+                        return resolveDetectedConnection(true, false, false, null, false, false, false, maxPacketSize);
                     }
                     else if (netCaps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
                         // Cellular is always treated as remote to avoid any possible
                         // issues with 464XLAT or similar technologies.
-                        return StreamConfiguration.STREAM_CFG_REMOTE;
+                        return resolveDetectedConnection(true, false, false, null, false, false, false, maxPacketSize);
                     }
+                    hasVerifiedNonVpnNonCellularCaps = true;
                 }
 
                 // Check if the server address is on-link
@@ -309,48 +417,60 @@ public class NvConnection {
                         e.printStackTrace();
 
                         // We can't decide without being able to resolve the server address
-                        return StreamConfiguration.STREAM_CFG_AUTO;
+                        return new DetectedConnection(StreamConfiguration.STREAM_CFG_AUTO, maxPacketSize, false);
                     }
 
                     // If the address is in the NAT64 prefix, always treat it as remote
+                    boolean isNat64 = false;
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         IpPrefix nat64Prefix = linkProperties.getNat64Prefix();
                         if (nat64Prefix != null && nat64Prefix.contains(serverAddress)) {
-                            return StreamConfiguration.STREAM_CFG_REMOTE;
+                            isNat64 = true;
                         }
                     }
 
-                    for (RouteInfo route : linkProperties.getRoutes()) {
-                        // Skip non-unicast routes (which are all we get prior to Android 13)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && route.getType() != RouteInfo.RTN_UNICAST) {
-                            continue;
-                        }
-
-                        // Find the first route that matches this address
-                        if (route.matches(serverAddress)) {
-                            // If there's no gateway, this is an on-link destination
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                // We want to use hasGateway() because getGateway() doesn't adhere
-                                // to documented behavior of returning null for on-link addresses.
-                                if (!route.hasGateway()) {
-                                    return StreamConfiguration.STREAM_CFG_LOCAL;
-                                }
-                            }
-                            else {
-                                // getGateway() is documented to return null for on-link destinations,
-                                // but it actually returns the unspecified address (0.0.0.0 or ::).
-                                InetAddress gateway = route.getGateway();
-                                if (gateway == null || gateway.isAnyLocalAddress()) {
-                                    return StreamConfiguration.STREAM_CFG_LOCAL;
-                                }
+                    boolean matchedOnLinkRoute = false;
+                    boolean matchedGatewayRoute = false;
+                    if (!isNat64 && !serverAddress.isLoopbackAddress()) {
+                        for (RouteInfo route : linkProperties.getRoutes()) {
+                            // Skip non-unicast routes (which are all we get prior to Android 13)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && route.getType() != RouteInfo.RTN_UNICAST) {
+                                continue;
                             }
 
-                            // We _should_ stop after the first matching route, but for some reason
-                            // Android doesn't always report IPv6 routes in descending order of
-                            // specificity and metric. To handle that case, we enumerate all matching
-                            // routes, assuming that an on-link route will always be preferred.
+                            // Find routes that match this address
+                            if (route.matches(serverAddress)) {
+                                // If there's no gateway, this is an on-link destination
+                                if (!hasRouteGateway(route)) {
+                                    matchedOnLinkRoute = true;
+                                    break;
+                                }
+
+                                matchedGatewayRoute = true;
+
+                                // We _should_ stop after the first matching route, but for some reason
+                                // Android doesn't always report IPv6 routes in descending order of
+                                // specificity and metric. To handle that case, we enumerate all matching
+                                // routes, assuming that an on-link route will always be preferred.
+                            }
                         }
                     }
+
+                    boolean ssRouted = com.limelight.extensions.ss.SsRoutes.routed(serverAddress);
+                    DetectedConnection detected = resolveDetectedConnection(
+                            false,
+                            hasVerifiedNonVpnNonCellularCaps,
+                            isNat64,
+                            serverAddress,
+                            matchedOnLinkRoute,
+                            matchedGatewayRoute,
+                            ssRouted,
+                            maxPacketSize);
+                    if (detected.crossSubnetPrivate) {
+                        LimeLog.info("Cross-subnet private destination " + serverAddress.getHostAddress() +
+                                " requires gateway; using STREAM_CFG_REMOTE with packetSize=" + detected.packetSize);
+                    }
+                    return detected;
                 }
             }
         }
@@ -366,13 +486,13 @@ public class NvConnection {
                     case ConnectivityManager.TYPE_MOBILE_SUPL:
                     case ConnectivityManager.TYPE_WIMAX:
                         // VPNs and cellular connections are always remote connections
-                        return StreamConfiguration.STREAM_CFG_REMOTE;
+                        return resolveDetectedConnection(true, false, false, null, false, false, false, maxPacketSize);
                 }
             }
         }
 
         // If we can't determine the connection type, let moonlight-common-c decide.
-        return StreamConfiguration.STREAM_CFG_AUTO;
+        return new DetectedConnection(StreamConfiguration.STREAM_CFG_AUTO, maxPacketSize, false);
     }
     
     private boolean startApp() throws XmlPullParserException, IOException
@@ -437,10 +557,9 @@ public class NvConnection {
 
         // We will perform some connection type detection if the caller asked for it
         if (context.streamConfig.getRemote() == StreamConfiguration.STREAM_CFG_AUTO) {
-            context.negotiatedRemoteStreaming = detectServerConnectionType();
-            context.negotiatedPacketSize =
-                    context.negotiatedRemoteStreaming == StreamConfiguration.STREAM_CFG_REMOTE ?
-                            1024 : context.streamConfig.getMaxPacketSize();
+            DetectedConnection detected = detectServerConnection(context.streamConfig.getMaxPacketSize());
+            context.negotiatedRemoteStreaming = detected.remoteStreaming;
+            context.negotiatedPacketSize = detected.packetSize;
         }
         else {
             context.negotiatedRemoteStreaming = context.streamConfig.getRemote();
