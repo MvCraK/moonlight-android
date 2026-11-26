@@ -1,15 +1,24 @@
 {
   "packageName": "com.mvcrak.moonlight.vplus",
   "latest": {
-    "versionCode": 2779,
+    "versionCode": 2780,
     "versionName": "12.15.33",
-    "commit": "e5d1e8941a28be2e44d7709424daf5510bc0ecec",
-    "size": 30666624,
-    "sha256": "0126bf4bd78d20bafbf3d33a89034db1303c35ef323cc676a3b840b2ced90ae7",
-    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2779/vplus-2779.apk",
-    "notes": "ui(ss): remove static route-rules section from SS Compose panel for compact layout"
+    "commit": "7523e0b1fd18771b790d4aef019ddbd379220e5a",
+    "size": 30670720,
+    "sha256": "415f282ee1262c856ed864f5e7d0d361c9a1112b39f779874b6e597dd57ebbaa",
+    "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2780/vplus-2780.apk",
+    "notes": "fix(stream): use STREAM_CFG_REMOTE and 1280B packets for cross-subnet private hosts"
   },
   "history": [
+    {
+      "versionCode": 2779,
+      "versionName": "12.15.33",
+      "commit": "e5d1e8941a28be2e44d7709424daf5510bc0ecec",
+      "size": 30666624,
+      "sha256": "0126bf4bd78d20bafbf3d33a89034db1303c35ef323cc676a3b840b2ced90ae7",
+      "apkUrl": "https://github.com/MvCraK/moonlight-android/releases/download/vplus-2779/vplus-2779.apk",
+      "notes": "ui(ss): remove static route-rules section from SS Compose panel for compact layout"
+    },
     {
       "versionCode": 2778,
       "versionName": "12.15.33",
