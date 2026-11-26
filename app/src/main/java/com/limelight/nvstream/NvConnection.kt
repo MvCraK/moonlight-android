@@ -173,12 +173,12 @@ open class NvConnection(
     }
 
     @Suppress("DEPRECATION")
-    private fun detectServerConnectionType(): Int {
+    private fun detectServerConnectionTransport(maxPacketSize: Int): Pair<NegotiatedStreamTransport, InetAddress?> {
         val isVpn = NetHelper.isActiveNetworkVpn(appContext)
         val isMobile = NetHelper.isActiveNetworkMobile(appContext)
 
         if (isVpn || isMobile) {
-            return StreamConfiguration.STREAM_CFG_REMOTE
+            return NegotiatedStreamTransport(StreamConfiguration.STREAM_CFG_REMOTE, REMOTE_PACKET_SIZE) to null
         }
 
         val connMgr = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -192,34 +192,46 @@ open class NvConnection(
                         serverAddress = resolveServerAddress()
                     } catch (e: IOException) {
                         e.printStackTrace()
-                        return StreamConfiguration.STREAM_CFG_AUTO
+                        return NegotiatedStreamTransport(StreamConfiguration.STREAM_CFG_AUTO, maxPacketSize) to null
                     }
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         val nat64Prefix = linkProperties.nat64Prefix
                         if (nat64Prefix != null && nat64Prefix.contains(serverAddress)) {
-                            return StreamConfiguration.STREAM_CFG_REMOTE
+                            return NegotiatedStreamTransport(StreamConfiguration.STREAM_CFG_REMOTE, REMOTE_PACKET_SIZE) to serverAddress
                         }
                     }
 
+                    val matchedRoutes = mutableListOf<MatchedRoute>()
                     for (route in linkProperties.routes) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && route.type != android.net.RouteInfo.RTN_UNICAST) {
                             continue
                         }
 
                         if (route.matches(serverAddress)) {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                if (!route.hasGateway()) {
-                                    return StreamConfiguration.STREAM_CFG_LOCAL
-                                }
+                            val hasGateway = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                route.hasGateway()
                             } else {
                                 val gateway = route.gateway
-                                if (gateway == null || gateway.isAnyLocalAddress) {
-                                    return StreamConfiguration.STREAM_CFG_LOCAL
-                                }
+                                gateway != null && !gateway.isAnyLocalAddress
                             }
+                            matchedRoutes.add(MatchedRoute(route.destination.prefixLength, hasGateway))
                         }
                     }
+
+                    val transport = resolveRouteTransport(
+                        serverAddress = serverAddress,
+                        matchedRoutes = matchedRoutes,
+                        maxPacketSize = maxPacketSize,
+                        routedByBuiltInSs = com.limelight.ss.SsRoutes.routed(serverAddress),
+                    )
+                    if (transport.crossSubnetPrivate) {
+                        LimeLog.info(
+                            "Cross-subnet private host ${serverAddress.hostAddress} routed via gateway; " +
+                                "using STREAM_CFG_REMOTE with packetSize=${transport.packetSize}"
+                        )
+                    }
+                    return transport to serverAddress
                 }
             }
         } else {
@@ -233,12 +245,12 @@ open class NvConnection(
                     ConnectivityManager.TYPE_MOBILE_MMS,
                     ConnectivityManager.TYPE_MOBILE_SUPL,
                     ConnectivityManager.TYPE_WIMAX ->
-                        return StreamConfiguration.STREAM_CFG_REMOTE
+                        return NegotiatedStreamTransport(StreamConfiguration.STREAM_CFG_REMOTE, REMOTE_PACKET_SIZE) to null
                 }
             }
         }
 
-        return StreamConfiguration.STREAM_CFG_AUTO
+        return NegotiatedStreamTransport(StreamConfiguration.STREAM_CFG_AUTO, maxPacketSize) to null
     }
 
     private inline fun <T> timeConnectionStep(name: String, block: () -> T): T {
@@ -359,18 +371,21 @@ open class NvConnection(
             context.negotiatedHeight = streamConfig.height
         }
 
+        var resolvedServerAddress: InetAddress? = null
         if (streamConfig.remote == StreamConfiguration.STREAM_CFG_AUTO) {
-            context.negotiatedRemoteStreaming = timeConnectionStep("connection type detection") {
-                detectServerConnectionType()
+            val (transport, resolved) = timeConnectionStep("connection type detection") {
+                detectServerConnectionTransport(streamConfig.maxPacketSize)
             }
-            context.negotiatedPacketSize =
-                if (context.negotiatedRemoteStreaming == StreamConfiguration.STREAM_CFG_REMOTE)
-                    1024 else streamConfig.maxPacketSize
+            resolvedServerAddress = resolved
+            context.negotiatedRemoteStreaming = transport.remoteStreaming
+            context.negotiatedPacketSize = transport.packetSize
         } else {
             context.negotiatedRemoteStreaming = streamConfig.remote
             context.negotiatedPacketSize = streamConfig.maxPacketSize
         }
-        com.limelight.ss.SsRoutes.tuneStream(context, streamConfig.maxPacketSize) { resolveServerAddress() }
+        com.limelight.ss.SsRoutes.tuneStream(context, streamConfig.maxPacketSize) {
+            resolvedServerAddress ?: resolveServerAddress()
+        }
 
         var app = streamConfig.app
 
@@ -912,6 +927,84 @@ open class NvConnection(
 
     companion object {
         private val connectionAllowed = Semaphore(1)
+        internal const val REMOTE_PACKET_SIZE = 1024
+        internal const val CROSS_SUBNET_PRIVATE_PACKET_SIZE = 1280
+
+        internal data class MatchedRoute(
+            val prefixLength: Int,
+            val hasGateway: Boolean,
+        )
+
+        internal data class NegotiatedStreamTransport(
+            val remoteStreaming: Int,
+            val packetSize: Int,
+            val crossSubnetPrivate: Boolean = false,
+        )
+
+        internal fun isPrivateRoutableAddress(addr: InetAddress): Boolean {
+            if (addr.isLoopbackAddress) return false
+            val bytes = addr.address
+            return when (bytes.size) {
+                4 -> {
+                    val b0 = bytes[0].toInt() and 0xFF
+                    val b1 = bytes[1].toInt() and 0xFF
+                    b0 == 10 ||
+                        (b0 == 172 && b1 in 16..31) ||
+                        (b0 == 192 && b1 == 168)
+                }
+                16 -> {
+                    val b0 = bytes[0].toInt() and 0xFF
+                    (b0 and 0xFE) == 0xFC
+                }
+                else -> false
+            }
+        }
+
+        internal fun resolveRouteTransport(
+            serverAddress: InetAddress,
+            matchedRoutes: List<MatchedRoute>,
+            maxPacketSize: Int,
+            routedByBuiltInSs: Boolean,
+        ): NegotiatedStreamTransport {
+            if (serverAddress.isLoopbackAddress) {
+                return NegotiatedStreamTransport(
+                    remoteStreaming = StreamConfiguration.STREAM_CFG_LOCAL,
+                    packetSize = maxPacketSize,
+                )
+            }
+
+            var bestRoute: MatchedRoute? = null
+            for (route in matchedRoutes) {
+                val current = bestRoute
+                if (current == null ||
+                    route.prefixLength > current.prefixLength ||
+                    (route.prefixLength == current.prefixLength && !route.hasGateway && current.hasGateway)
+                ) {
+                    bestRoute = route
+                }
+            }
+
+            if (bestRoute != null) {
+                if (!bestRoute.hasGateway) {
+                    return NegotiatedStreamTransport(
+                        remoteStreaming = StreamConfiguration.STREAM_CFG_LOCAL,
+                        packetSize = maxPacketSize,
+                    )
+                }
+                if (!routedByBuiltInSs && isPrivateRoutableAddress(serverAddress)) {
+                    return NegotiatedStreamTransport(
+                        remoteStreaming = StreamConfiguration.STREAM_CFG_REMOTE,
+                        packetSize = minOf(maxPacketSize, CROSS_SUBNET_PRIVATE_PACKET_SIZE),
+                        crossSubnetPrivate = true,
+                    )
+                }
+            }
+
+            return NegotiatedStreamTransport(
+                remoteStreaming = StreamConfiguration.STREAM_CFG_AUTO,
+                packetSize = maxPacketSize,
+            )
+        }
 
         fun findExternalAddressForMdns(stunHostname: String, stunPort: Int): String {
             return MoonBridge.findExternalAddressIP4(stunHostname, stunPort)
